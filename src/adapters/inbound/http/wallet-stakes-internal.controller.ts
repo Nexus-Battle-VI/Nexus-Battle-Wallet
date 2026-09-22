@@ -33,7 +33,7 @@ import { toWalletHttpException } from './wallet-error.mapper'
  * lo exige antes de llegar aqui.
  */
 @ApiTags('wallet-internal')
-@InternalOnly()
+@InternalOnly('combat')
 @Controller('internal/v1/wallet/stakes')
 export class WalletStakesInternalController {
   constructor(

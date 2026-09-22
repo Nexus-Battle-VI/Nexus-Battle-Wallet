@@ -11,6 +11,7 @@ import { Pool } from 'pg'
 
 import * as walletAccounts from '../../adapters/outbound/persistence/migrations/001-wallet-accounts'
 import * as walletStakes from '../../adapters/outbound/persistence/migrations/002-wallet-stakes'
+import * as walletAuctionHolds from '../../adapters/outbound/persistence/migrations/003-wallet-auction-holds'
 import type { Database } from '../../adapters/outbound/persistence/schema'
 
 export interface DatabaseOptions {
@@ -75,6 +76,7 @@ export const createDatabase = (options: DatabaseOptions): Kysely<Database> => {
 export const MIGRATIONS: Readonly<Record<string, Migration>> = {
   '001-wallet-accounts': walletAccounts,
   '002-wallet-stakes': walletStakes,
+  '003-wallet-auction-holds': walletAuctionHolds,
 }
 
 export interface MigrationOutcome {

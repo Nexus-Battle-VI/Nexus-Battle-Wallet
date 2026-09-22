@@ -90,4 +90,16 @@ describe('Configuracion del servicio', () => {
   ])('rechaza %s', (_caso, env) => {
     expect(() => loadConfig(env)).toThrow(ConfigurationError)
   })
+
+  it('configura los limites de Auction y rechaza enteros invalidos', () => {
+    expect(loadConfig({}).auctionHoldGraceMs).toBe(300000)
+    expect(loadConfig({}).auctionMaxCloseAheadMs).toBe(172800000)
+    expect(
+      loadConfig({ AUCTION_HOLD_GRACE_MS: '123', AUCTION_MAX_CLOSE_AHEAD_MS: '456' }),
+    ).toMatchObject({ auctionHoldGraceMs: 123, auctionMaxCloseAheadMs: 456 })
+    for (const value of ['0', '-1', 'texto', '1.5']) {
+      expect(() => loadConfig({ AUCTION_HOLD_GRACE_MS: value })).toThrow(ConfigurationError)
+      expect(() => loadConfig({ AUCTION_MAX_CLOSE_AHEAD_MS: value })).toThrow(ConfigurationError)
+    }
+  })
 })

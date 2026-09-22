@@ -2,6 +2,7 @@ import {
   ConflictException,
   HttpException,
   ServiceUnavailableException,
+  NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common'
 
@@ -11,6 +12,15 @@ import {
   InsufficientAvailableBalanceError,
   SettlementNotZeroSumError,
 } from '../../../application/errors/StakePersistenceError'
+import {
+  AuctionHoldDateTooFarError,
+  AuctionHoldInsufficientBalanceError,
+  AuctionHoldNotFoundError,
+  AuctionHoldReferenceError,
+  AuctionHoldStateError,
+  ExpiredAuctionHoldDateError,
+  InvalidAuctionHoldDateError,
+} from '../../../application/errors/AuctionHoldError'
 import { OperationConflictError } from '../../../application/errors/WalletPersistenceError'
 import { DomainError } from '../../../domain/errors/DomainError'
 import { InvalidStakeAmountError } from '../../../domain/value-objects/stake-amount'
@@ -26,6 +36,17 @@ export const toWalletHttpException = (error: unknown): HttpException => {
   if (error instanceof OperationConflictError) {
     return new ConflictException(body(409, 'OPERATION_CONFLICT', error.message))
   }
+  if (error instanceof AuctionHoldNotFoundError)
+    return new NotFoundException(body(404, 'HOLD_NOT_FOUND', error.message))
+  if (
+    error instanceof AuctionHoldInsufficientBalanceError ||
+    error instanceof AuctionHoldStateError ||
+    error instanceof AuctionHoldReferenceError ||
+    error instanceof InvalidAuctionHoldDateError ||
+    error instanceof ExpiredAuctionHoldDateError ||
+    error instanceof AuctionHoldDateTooFarError
+  )
+    return new UnprocessableEntityException(body(422, 'AUCTION_HOLD_INVALID', error.message))
 
   // Apuestas (HU-23): cada rechazo terminal lleva su `code` del contrato §11.
   if (error instanceof InsufficientAvailableBalanceError) {
