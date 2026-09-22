@@ -86,6 +86,34 @@ describe('CreditBattleReward', () => {
     expect(snapshot.balance).toBe(2)
   })
 
+  it('el mismo operationId con OTRO reason es un conflicto, no un replay, aunque los montos coincidan', async () => {
+    const wallet = new InMemoryWalletRepository()
+    const useCase = new CreditBattleReward(wallet, new FixedClock(MID_WEEK))
+
+    await useCase.execute(input())
+
+    await expect(useCase.execute(input({ reason: 'OTRA_COSA' }))).rejects.toThrow(
+      OperationConflictError,
+    )
+
+    const snapshot = await new GetWalletSnapshot(wallet, new FixedClock(MID_WEEK)).execute('sub-1')
+    expect(snapshot.balance).toBe(2)
+  })
+
+  it('el mismo operationId con OTRO occurredAt es un conflicto, no un replay, aunque los montos coincidan', async () => {
+    const wallet = new InMemoryWalletRepository()
+    const useCase = new CreditBattleReward(wallet, new FixedClock(MID_WEEK))
+
+    await useCase.execute(input())
+
+    await expect(
+      useCase.execute(input({ occurredAt: new Date('2026-09-22T18:00:00.000Z') })),
+    ).rejects.toThrow(OperationConflictError)
+
+    const snapshot = await new GetWalletSnapshot(wallet, new FixedClock(MID_WEEK)).execute('sub-1')
+    expect(snapshot.balance).toBe(2)
+  })
+
   it('rechaza un monto fuera del catalogo cerrado sin tocar el saldo', async () => {
     const wallet = new InMemoryWalletRepository()
     const useCase = new CreditBattleReward(wallet, new FixedClock(MID_WEEK))

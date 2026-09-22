@@ -38,11 +38,20 @@ export class PostgresWalletRepository implements WalletRepositoryPort {
         .executeTakeFirst()
 
       if (existing !== undefined) {
+        // La intencion completa del contrato (hu-22-reward-contract-v1 §3): el
+        // cuerpo entero, no solo los montos. Un `operationId` repetido con
+        // `reason` u `occurredAt` distintos es OTRA operacion que llego a
+        // colisionar con el mismo id, no un replay -- debe rechazarse con 409,
+        // no devolverse como si fuera la misma. `occurred_at` vuelve de
+        // Postgres como `Date`: se compara por valor (`getTime()`), nunca por
+        // identidad de objeto.
         const sameIntent =
           existing.player_id === command.playerId &&
           existing.battle_id === command.battleId &&
+          existing.reason === command.reason &&
           existing.credits_amount === command.creditsAmount &&
-          existing.victory_credits_amount === command.victoryCreditsAmount
+          existing.victory_credits_amount === command.victoryCreditsAmount &&
+          existing.occurred_at.getTime() === command.occurredAt.getTime()
 
         if (!sameIntent) {
           throw new OperationConflictError(command.operationId)

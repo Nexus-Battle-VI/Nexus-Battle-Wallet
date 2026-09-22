@@ -100,6 +100,40 @@ describe('PostgresWalletRepository', () => {
     expect(snapshot.balance).toBe(2)
   })
 
+  it('el mismo operationId con otro reason u occurredAt tambien lanza OperationConflictError (no solo los montos)', async () => {
+    const base = {
+      operationId: 'op-pg-conflict-intent',
+      playerId: 'player-pg-conflict-intent',
+      battleId: 'battle-pg-conflict-intent',
+      reason: 'BATTLE_REWARD',
+      creditsAmount: 2,
+      victoryCreditsAmount: 2,
+      occurredAt: new Date('2026-09-22T15:00:00.000Z'),
+    }
+
+    await repository.creditBattleReward(base, WEEK1)
+
+    // `occurred_at` vuelve de Postgres como `Date`: si la comparacion fuera
+    // por identidad de objeto (no por valor), esto pasaria como replay por
+    // error incluso con exactamente el mismo cuerpo.
+    const sameBodyReplay = await repository.creditBattleReward({ ...base }, WEEK1)
+    expect(sameBodyReplay.applied).toBe(false)
+
+    await expect(
+      repository.creditBattleReward({ ...base, reason: 'OTRA_COSA' }, WEEK1),
+    ).rejects.toThrow(OperationConflictError)
+
+    await expect(
+      repository.creditBattleReward(
+        { ...base, occurredAt: new Date('2026-09-22T18:00:00.000Z') },
+        WEEK1,
+      ),
+    ).rejects.toThrow(OperationConflictError)
+
+    const snapshot = await repository.getSnapshot('player-pg-conflict-intent', WEEK1)
+    expect(snapshot.balance).toBe(2)
+  })
+
   it('20 creditos de victoria entregan un cofre y reinician el progreso sin remanente', async () => {
     const player = 'player-pg-4'
     let battle = 0

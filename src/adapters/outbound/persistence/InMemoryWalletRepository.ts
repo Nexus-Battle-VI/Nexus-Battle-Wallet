@@ -19,8 +19,10 @@ interface LedgerEntry {
   readonly operationId: string
   readonly playerId: string
   readonly battleId: string
+  readonly reason: string
   readonly creditsAmount: number
   readonly victoryCreditsAmount: number
+  readonly occurredAt: Date
   readonly result: CreditBattleRewardResult
 }
 
@@ -45,11 +47,16 @@ export class InMemoryWalletRepository implements WalletRepositoryPort {
     const existing = this.ledger.get(command.operationId)
 
     if (existing !== undefined) {
+      // Misma regla que `PostgresWalletRepository`: la intencion completa del
+      // contrato, `reason` y `occurredAt` incluidos (comparado por valor, no
+      // por identidad de objeto).
       const sameIntent =
         existing.playerId === command.playerId &&
         existing.battleId === command.battleId &&
+        existing.reason === command.reason &&
         existing.creditsAmount === command.creditsAmount &&
-        existing.victoryCreditsAmount === command.victoryCreditsAmount
+        existing.victoryCreditsAmount === command.victoryCreditsAmount &&
+        existing.occurredAt.getTime() === command.occurredAt.getTime()
 
       if (!sameIntent) {
         throw new OperationConflictError(command.operationId)
@@ -94,8 +101,10 @@ export class InMemoryWalletRepository implements WalletRepositoryPort {
       operationId: command.operationId,
       playerId: command.playerId,
       battleId: command.battleId,
+      reason: command.reason,
       creditsAmount: command.creditsAmount,
       victoryCreditsAmount: command.victoryCreditsAmount,
+      occurredAt: command.occurredAt,
       result,
     })
 
