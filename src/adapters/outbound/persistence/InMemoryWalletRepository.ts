@@ -3,38 +3,23 @@ import type {
   CreditBattleRewardCommand,
   CreditBattleRewardResult,
   WalletRepositoryPort,
-  WalletStateSnapshot,
+  WalletSnapshot,
 } from '../../../application/ports/WalletRepositoryPort'
 import { WEEKLY_CHEST_LIMIT } from '../../../domain/policies/ChestEligibilityPolicy'
 import { computeNextWalletState } from '../../../application/services/WalletStateTransition'
-
-interface AccountState {
-  balance: number
-  victoryProgress: number
-  weeklyChestCount: number
-  weekIdentity: string
-}
-
-interface LedgerEntry {
-  readonly operationId: string
-  readonly playerId: string
-  readonly battleId: string
-  readonly reason: string
-  readonly creditsAmount: number
-  readonly victoryCreditsAmount: number
-  readonly occurredAt: Date
-  readonly result: CreditBattleRewardResult
-}
+import { InMemoryWalletStore } from './InMemoryWalletStore'
 
 /**
  * Doble de pruebas/desarrollo (`PERSISTENCE_DRIVER=memory`). Reproduce la
  * misma semantica de idempotencia y de transicion de estado que
  * `PostgresWalletRepository`, sin bloqueo real: Node es de un solo hilo, y
  * esta clase no se usa en produccion (ADR-019, el andamiaje ya lo impide).
+ *
+ * Comparte `InMemoryWalletStore` con `InMemoryStakeRepository` para que
+ * `reserved`/`available` sean los mismos desde cualquier lectura.
  */
 export class InMemoryWalletRepository implements WalletRepositoryPort {
-  private readonly accounts = new Map<string, AccountState>()
-  private readonly ledger = new Map<string, LedgerEntry>()
+  constructor(private readonly store: InMemoryWalletStore = new InMemoryWalletStore()) {}
 
   // `async` a proposito: un `throw` sincrono en un metodo NO async que declara
   // devolver `Promise<T>` escapa como excepcion sincrona en lugar de rechazar
@@ -44,7 +29,7 @@ export class InMemoryWalletRepository implements WalletRepositoryPort {
     command: CreditBattleRewardCommand,
     currentWeekIdentity: string,
   ): Promise<CreditBattleRewardResult> {
-    const existing = this.ledger.get(command.operationId)
+    const existing = this.store.rewardLedger.get(command.operationId)
 
     if (existing !== undefined) {
       // Misma regla que `PostgresWalletRepository`: la intencion completa del
@@ -65,8 +50,9 @@ export class InMemoryWalletRepository implements WalletRepositoryPort {
       return { ...existing.result, applied: false }
     }
 
-    const stored = this.accounts.get(command.playerId) ?? {
+    const stored = this.store.accounts.get(command.playerId) ?? {
       balance: 0,
+      reserved: 0,
       victoryProgress: 0,
       weeklyChestCount: 0,
       weekIdentity: currentWeekIdentity,
@@ -79,8 +65,10 @@ export class InMemoryWalletRepository implements WalletRepositoryPort {
       command.victoryCreditsAmount,
     )
 
-    this.accounts.set(command.playerId, {
+    this.store.accounts.set(command.playerId, {
       balance: next.balance,
+      // Reservar no toca `balance`; acreditar no toca `reserved`.
+      reserved: stored.reserved,
       victoryProgress: next.victoryProgress,
       weeklyChestCount: next.weeklyChestCount,
       weekIdentity: next.weekIdentity,
@@ -97,7 +85,7 @@ export class InMemoryWalletRepository implements WalletRepositoryPort {
       chestEarned: next.chestEarned,
     }
 
-    this.ledger.set(command.operationId, {
+    this.store.rewardLedger.set(command.operationId, {
       operationId: command.operationId,
       playerId: command.playerId,
       battleId: command.battleId,
@@ -112,12 +100,14 @@ export class InMemoryWalletRepository implements WalletRepositoryPort {
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await
-  async getSnapshot(playerId: string, currentWeekIdentity: string): Promise<WalletStateSnapshot> {
-    const stored = this.accounts.get(playerId)
+  async getSnapshot(playerId: string, currentWeekIdentity: string): Promise<WalletSnapshot> {
+    const stored = this.store.accounts.get(playerId)
 
     if (stored === undefined) {
       return {
         balance: 0,
+        reserved: 0,
+        available: 0,
         victoryProgress: 0,
         weeklyChestCount: 0,
         weeklyChestLimit: WEEKLY_CHEST_LIMIT,
@@ -130,6 +120,8 @@ export class InMemoryWalletRepository implements WalletRepositoryPort {
 
     return {
       balance: stored.balance,
+      reserved: stored.reserved,
+      available: stored.balance - stored.reserved,
       victoryProgress: stored.victoryProgress,
       weeklyChestCount,
       weeklyChestLimit: WEEKLY_CHEST_LIMIT,

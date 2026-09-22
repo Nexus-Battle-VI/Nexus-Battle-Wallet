@@ -270,6 +270,8 @@ describe('PostgresWalletRepository', () => {
 
     expect(snapshot).toEqual({
       balance: 0,
+      reserved: 0,
+      available: 0,
       victoryProgress: 0,
       weeklyChestCount: 0,
       weeklyChestLimit: 2,

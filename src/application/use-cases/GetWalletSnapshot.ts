@@ -1,9 +1,10 @@
 import { weekIdentityOf } from '../../domain/value-objects/week-identity'
 import type { ClockPort } from '../ports/ClockPort'
-import type { WalletRepositoryPort, WalletStateSnapshot } from '../ports/WalletRepositoryPort'
+import type { WalletRepositoryPort, WalletSnapshot } from '../ports/WalletRepositoryPort'
 import { VICTORY_PROGRESS_THRESHOLD } from '../../domain/policies/ChestEligibilityPolicy'
 
-export interface WalletSnapshotView extends WalletStateSnapshot {
+/** HU-23 amplia la lectura con `reserved`/`available` (contrato §6), aditivo. */
+export interface WalletSnapshotView extends WalletSnapshot {
   readonly threshold: number
 }
 
