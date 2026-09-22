@@ -1,4 +1,5 @@
 import {
+  applyDecorators,
   SetMetadata,
   UnauthorizedException,
   createParamDecorator,
@@ -9,7 +10,12 @@ import type { Role, VerifiedIdentity } from '../../../../application/ports/Token
 
 export const IS_PUBLIC = 'auth:public'
 export const IS_INTERNAL = 'auth:internal'
-export const InternalOnly = (): MethodDecorator & ClassDecorator => SetMetadata(IS_INTERNAL, true)
+export const INTERNAL_ALLOWED_CALLERS = 'auth:internal-callers'
+export const InternalOnly = (...callers: readonly string[]): MethodDecorator & ClassDecorator => {
+  const decorators: (MethodDecorator | ClassDecorator)[] = [SetMetadata(IS_INTERNAL, true)]
+  if (callers.length > 0) decorators.push(SetMetadata(INTERNAL_ALLOWED_CALLERS, callers))
+  return applyDecorators(...decorators)
+}
 export const REQUIRED_ROLES = 'auth:roles'
 
 /**

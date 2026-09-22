@@ -11,6 +11,9 @@ import { RolesGuard } from '../../adapters/inbound/http/auth/roles.guard'
 import { WalletController } from '../../adapters/inbound/http/wallet.controller'
 import { WalletInternalController } from '../../adapters/inbound/http/wallet-internal.controller'
 import { WalletStakesInternalController } from '../../adapters/inbound/http/wallet-stakes-internal.controller'
+import { WalletAuctionHoldsController } from '../../adapters/inbound/http/wallet-auction-holds.controller'
+import { InMemoryAuctionHoldRepository } from '../../adapters/outbound/persistence/InMemoryAuctionHoldRepository'
+import { PostgresAuctionHoldRepository } from '../../adapters/outbound/persistence/PostgresAuctionHoldRepository'
 import { CognitoTokenVerifier } from '../../adapters/outbound/identity/CognitoTokenVerifier'
 import { InMemoryStakeRepository } from '../../adapters/outbound/persistence/InMemoryStakeRepository'
 import { InMemoryWalletRepository } from '../../adapters/outbound/persistence/InMemoryWalletRepository'
@@ -20,6 +23,11 @@ import { PostgresWalletRepository } from '../../adapters/outbound/persistence/Po
 import type { Database } from '../../adapters/outbound/persistence/schema'
 import { SystemClock } from '../../adapters/outbound/system/SystemClock'
 import { CLOCK, type ClockPort } from '../../application/ports/ClockPort'
+import {
+  AUCTION_HOLD_REPOSITORY,
+  type AuctionHoldRepositoryPort,
+} from '../../application/ports/AuctionHoldRepositoryPort'
+import { AUCTION_HOLDS, AuctionHolds } from '../../application/use-cases/AuctionHolds'
 import {
   STAKE_REPOSITORY,
   type StakeRepositoryPort,
@@ -78,6 +86,7 @@ export const INTERNAL_CALLERS: readonly string[] = ['auction', 'combat', 'missio
     WalletController,
     WalletInternalController,
     WalletStakesInternalController,
+    WalletAuctionHoldsController,
   ],
   providers: [
     {
@@ -240,6 +249,33 @@ export const INTERNAL_CALLERS: readonly string[] = ['auction', 'combat', 'missio
           ? new PostgresStakeRepository(db)
           : new InMemoryStakeRepository(store),
       inject: [APP_CONFIG, DATABASE, IN_MEMORY_WALLET_STORE],
+    },
+    {
+      provide: AUCTION_HOLD_REPOSITORY,
+      useFactory: (
+        config: AppConfig,
+        db: Kysely<Database> | null,
+        store: InMemoryWalletStore,
+      ): AuctionHoldRepositoryPort =>
+        config.persistenceDriver === PersistenceDriver.Postgres && db !== null
+          ? new PostgresAuctionHoldRepository(db)
+          : new InMemoryAuctionHoldRepository(store),
+      inject: [APP_CONFIG, DATABASE, IN_MEMORY_WALLET_STORE],
+    },
+    {
+      provide: AUCTION_HOLDS,
+      useFactory: (
+        repository: AuctionHoldRepositoryPort,
+        clock: ClockPort,
+        config: AppConfig,
+      ): AuctionHolds =>
+        new AuctionHolds(
+          repository,
+          clock,
+          config.auctionHoldGraceMs,
+          config.auctionMaxCloseAheadMs,
+        ),
+      inject: [AUCTION_HOLD_REPOSITORY, CLOCK, APP_CONFIG],
     },
     {
       provide: CREDIT_BATTLE_REWARD,

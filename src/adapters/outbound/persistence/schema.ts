@@ -45,6 +45,9 @@ export interface Database {
   readonly wallet_ledger: WalletLedgerTable
   readonly wallet_stake_holds: WalletStakeHoldsTable
   readonly wallet_stake_ledger: WalletStakeLedgerTable
+  readonly wallet_auction_holds: WalletAuctionHoldsTable
+  readonly wallet_auction_hold_operations: WalletAuctionHoldOperationsTable
+  readonly wallet_auction_hold_ledger: WalletAuctionHoldLedgerTable
 }
 
 /**
@@ -76,4 +79,39 @@ export interface WalletStakeLedgerTable {
   readonly resulting_balance: ColumnType<string, string | number, never>
   readonly resulting_reserved: ColumnType<string, string | number, never>
   readonly created_at: ColumnType<Date, Date | string | undefined, never>
+}
+
+export interface WalletAuctionHoldsTable {
+  readonly id: string
+  readonly creation_operation_id: string
+  readonly player_id: string
+  readonly amount: ColumnType<string, string | number, string | number>
+  readonly auction_id: string
+  readonly bid_id: string
+  readonly reason: string
+  readonly status: ColumnType<
+    'ACTIVE' | 'CAPTURED' | 'RELEASED' | 'EXPIRED',
+    'ACTIVE' | 'CAPTURED' | 'RELEASED' | 'EXPIRED',
+    'ACTIVE' | 'CAPTURED' | 'RELEASED' | 'EXPIRED'
+  >
+  readonly created_at: ColumnType<Date, Date | string, Date | string>
+  readonly updated_at: ColumnType<Date, Date | string, Date | string>
+  readonly expires_at: ColumnType<Date, Date | string, Date | string>
+}
+export interface WalletAuctionHoldOperationsTable {
+  readonly operation_id: string
+  readonly intent: unknown
+  readonly result: unknown
+  readonly created_at: ColumnType<Date, Date | string, Date | string>
+}
+export interface WalletAuctionHoldLedgerTable {
+  readonly id: Generated<string>
+  readonly operation_id: string
+  readonly hold_id: string
+  readonly player_id: string
+  readonly kind: string
+  readonly amount: ColumnType<string, string | number, string | number>
+  readonly resulting_balance: ColumnType<string, string | number, string | number>
+  readonly resulting_reserved: ColumnType<string, string | number, string | number>
+  readonly created_at: ColumnType<Date, Date | string, Date | string>
 }

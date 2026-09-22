@@ -1,6 +1,10 @@
 import type { CreditBattleRewardResult } from '../../../application/ports/WalletRepositoryPort'
 import type { StakeHoldStatus } from '../../../domain/value-objects/stake-hold'
 import type { StakeLedgerKind } from './schema'
+import type {
+  AuctionHoldStatus,
+  AuctionHoldResult,
+} from '../../../application/ports/AuctionHoldRepositoryPort'
 
 /**
  * Estado compartido de los dobles en memoria (`PERSISTENCE_DRIVER=memory`).
@@ -58,4 +62,17 @@ export class InMemoryWalletStore {
   readonly stakeHolds = new Map<string, InMemoryStakeHold>()
   /** Un arreglo por `operationId`: `/settle` tiene N movimientos (uno por jugador). */
   readonly stakeLedger = new Map<string, InMemoryStakeLedgerEntry[]>()
+  readonly auctionHolds = new Map<
+    string,
+    {
+      id: string
+      playerId: string
+      amount: number
+      auctionId: string
+      bidId: string
+      status: AuctionHoldStatus
+      expiresAt: Date
+    }
+  >()
+  readonly auctionOperations = new Map<string, { intent: string; result: AuctionHoldResult }>()
 }
