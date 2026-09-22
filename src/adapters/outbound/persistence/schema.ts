@@ -62,12 +62,7 @@ export interface WalletStakeHoldsTable {
   readonly expires_at: ColumnType<Date, Date | string, Date | string>
 }
 
-export type StakeLedgerKind =
-  | 'RESERVE'
-  | 'RELEASE'
-  | 'SETTLE_CAPTURE'
-  | 'SETTLE_CREDIT'
-  | 'EXPIRE'
+export type StakeLedgerKind = 'RESERVE' | 'RELEASE' | 'SETTLE_CAPTURE' | 'SETTLE_CREDIT' | 'EXPIRE'
 
 /** Insert-only: un movimiento por cada llamada aplicada de verdad. */
 export interface WalletStakeLedgerTable {
