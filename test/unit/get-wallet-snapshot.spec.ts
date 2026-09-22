@@ -1,6 +1,9 @@
 import { GetWalletSnapshot } from '../../src/application/use-cases/GetWalletSnapshot'
 import { CreditBattleReward } from '../../src/application/use-cases/CreditBattleReward'
+import { ReserveStake } from '../../src/application/use-cases/ReserveStake'
+import { InMemoryStakeRepository } from '../../src/adapters/outbound/persistence/InMemoryStakeRepository'
 import { InMemoryWalletRepository } from '../../src/adapters/outbound/persistence/InMemoryWalletRepository'
+import { InMemoryWalletStore } from '../../src/adapters/outbound/persistence/InMemoryWalletStore'
 import { VICTORY_PROGRESS_THRESHOLD } from '../../src/domain/policies/ChestEligibilityPolicy'
 import type { ClockPort } from '../../src/application/ports/ClockPort'
 
@@ -22,6 +25,8 @@ describe('GetWalletSnapshot', () => {
 
     expect(snapshot).toEqual({
       balance: 0,
+      reserved: 0,
+      available: 0,
       victoryProgress: 0,
       weeklyChestCount: 0,
       weeklyChestLimit: 2,
@@ -45,6 +50,31 @@ describe('GetWalletSnapshot', () => {
 
     const snapshot = await new GetWalletSnapshot(wallet, clock).execute('sub-1')
 
-    expect(snapshot).toMatchObject({ balance: 2, victoryProgress: 2 })
+    expect(snapshot).toMatchObject({ balance: 2, reserved: 0, available: 2, victoryProgress: 2 })
+  })
+
+  it('una reserva activa descuenta `available` sin tocar `balance` (S-18)', async () => {
+    const store = new InMemoryWalletStore()
+    store.accounts.set('sub-1', {
+      balance: 100,
+      reserved: 0,
+      victoryProgress: 0,
+      weeklyChestCount: 0,
+      weekIdentity: '2026-09-21',
+    })
+    const wallet = new InMemoryWalletRepository(store)
+    const clock = new FixedClock(AT)
+
+    await new ReserveStake(new InMemoryStakeRepository(store), clock).execute({
+      operationId: 'battle:b1:player:sub-1:stake:reserve',
+      playerId: 'sub-1',
+      battleId: 'b1',
+      amount: 30,
+      occurredAt: AT,
+    })
+
+    const snapshot = await new GetWalletSnapshot(wallet, clock).execute('sub-1')
+
+    expect(snapshot).toMatchObject({ balance: 100, reserved: 30, available: 70 })
   })
 })

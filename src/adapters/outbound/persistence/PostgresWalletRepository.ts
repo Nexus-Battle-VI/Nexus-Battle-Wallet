@@ -1,14 +1,15 @@
-import { sql, type Kysely } from 'kysely'
+import type { Kysely } from 'kysely'
 
 import { OperationConflictError } from '../../../application/errors/WalletPersistenceError'
 import type {
   CreditBattleRewardCommand,
   CreditBattleRewardResult,
   WalletRepositoryPort,
-  WalletStateSnapshot,
+  WalletSnapshot,
 } from '../../../application/ports/WalletRepositoryPort'
 import { WEEKLY_CHEST_LIMIT } from '../../../domain/policies/ChestEligibilityPolicy'
 import { computeNextWalletState } from '../../../application/services/WalletStateTransition'
+import { lockByText } from './advisory-lock'
 import type { Database } from './schema'
 
 /**
@@ -29,7 +30,7 @@ export class PostgresWalletRepository implements WalletRepositoryPort {
     currentWeekIdentity: string,
   ): Promise<CreditBattleRewardResult> {
     return this.db.transaction().execute(async (transaction) => {
-      await sql`select pg_advisory_xact_lock(hashtext(${command.operationId}))`.execute(transaction)
+      await lockByText(transaction, command.operationId)
 
       const existing = await transaction
         .selectFrom('wallet_ledger')
@@ -72,7 +73,7 @@ export class PostgresWalletRepository implements WalletRepositoryPort {
       // Serializa operaciones CONCURRENTES sobre la MISMA cuenta: sin esto,
       // dos creditos simultaneos del mismo jugador podrian leer el mismo
       // progreso de partida y producir dos cofres cuando solo corresponde uno.
-      await sql`select pg_advisory_xact_lock(hashtext(${command.playerId}))`.execute(transaction)
+      await lockByText(transaction, command.playerId)
 
       await transaction
         .insertInto('wallet_accounts')
@@ -148,7 +149,7 @@ export class PostgresWalletRepository implements WalletRepositoryPort {
     })
   }
 
-  async getSnapshot(playerId: string, currentWeekIdentity: string): Promise<WalletStateSnapshot> {
+  async getSnapshot(playerId: string, currentWeekIdentity: string): Promise<WalletSnapshot> {
     const row = await this.db
       .selectFrom('wallet_accounts')
       .selectAll()
@@ -158,6 +159,8 @@ export class PostgresWalletRepository implements WalletRepositoryPort {
     if (row === undefined) {
       return {
         balance: 0,
+        reserved: 0,
+        available: 0,
         victoryProgress: 0,
         weeklyChestCount: 0,
         weeklyChestLimit: WEEKLY_CHEST_LIMIT,
@@ -166,9 +169,13 @@ export class PostgresWalletRepository implements WalletRepositoryPort {
     }
 
     const weeklyChestCount = row.week_identity === currentWeekIdentity ? row.weekly_chest_count : 0
+    const balance = Number(row.balance)
+    const reserved = Number(row.reserved)
 
     return {
-      balance: Number(row.balance),
+      balance,
+      reserved,
+      available: balance - reserved,
       victoryProgress: row.victory_progress,
       weeklyChestCount,
       weeklyChestLimit: WEEKLY_CHEST_LIMIT,

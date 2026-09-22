@@ -48,7 +48,9 @@ describe('Migracion 002-wallet-stakes', () => {
   }
 
   it('crea las dos tablas y anade reserved a wallet_accounts', async () => {
-    const tables = await sql<{ table_name: string }>`select table_name from information_schema.tables
+    const tables = await sql<{
+      table_name: string
+    }>`select table_name from information_schema.tables
       where table_schema = 'public' and table_name like 'wallet%'`.execute(db)
     const names = tables.rows.map((row) => row.table_name)
 
@@ -56,7 +58,9 @@ describe('Migracion 002-wallet-stakes', () => {
       expect.arrayContaining(['wallet_stake_holds', 'wallet_stake_ledger', 'wallet_accounts']),
     )
 
-    const columns = await sql<{ column_name: string }>`select column_name from information_schema.columns
+    const columns = await sql<{
+      column_name: string
+    }>`select column_name from information_schema.columns
       where table_name = 'wallet_accounts'`.execute(db)
     expect(columns.rows.map((row) => row.column_name)).toContain('reserved')
   })
@@ -138,19 +142,25 @@ describe('Migracion 002-wallet-stakes', () => {
     const migrationDb = db as unknown as Kysely<unknown>
     await down(migrationDb)
 
-    const tables = await sql<{ table_name: string }>`select table_name from information_schema.tables
+    const tables = await sql<{
+      table_name: string
+    }>`select table_name from information_schema.tables
       where table_schema = 'public'`.execute(db)
     const names = tables.rows.map((row) => row.table_name)
     expect(names).not.toContain('wallet_stake_holds')
     expect(names).not.toContain('wallet_stake_ledger')
 
-    const columns = await sql<{ column_name: string }>`select column_name from information_schema.columns
+    const columns = await sql<{
+      column_name: string
+    }>`select column_name from information_schema.columns
       where table_name = 'wallet_accounts'`.execute(db)
     expect(columns.rows.map((row) => row.column_name)).not.toContain('reserved')
 
     // `up` de nuevo: la migracion es reversible de verdad.
     await up(migrationDb)
-    const recreated = await sql<{ table_name: string }>`select table_name from information_schema.tables
+    const recreated = await sql<{
+      table_name: string
+    }>`select table_name from information_schema.tables
       where table_schema = 'public' and table_name = 'wallet_stake_holds'`.execute(db)
     expect(recreated.rows).toHaveLength(1)
   })

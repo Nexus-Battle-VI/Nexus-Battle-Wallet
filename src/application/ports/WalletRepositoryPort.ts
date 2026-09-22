@@ -16,6 +16,16 @@ export interface WalletStateSnapshot {
   readonly weekIdentity: string
 }
 
+/**
+ * Lectura ampliada de HU-23 §6: `reserved` es la suma de los holds `ACTIVE`
+ * (persistida) y `available = balance - reserved` (derivada, no persistida).
+ * Es lo unico contra lo que se valida una reserva nueva.
+ */
+export interface WalletSnapshot extends WalletStateSnapshot {
+  readonly reserved: number
+  readonly available: number
+}
+
 export interface CreditBattleRewardResult extends WalletStateSnapshot {
   readonly operationId: string
   /** `false` cuando la respuesta es el replay de una operacion ya aplicada. */
@@ -44,5 +54,5 @@ export interface WalletRepositoryPort {
   ): Promise<CreditBattleRewardResult>
 
   /** Lectura para `GET /api/v1/wallet/me`. Aplica el mismo rollover perezoso. */
-  getSnapshot(playerId: string, currentWeekIdentity: string): Promise<WalletStateSnapshot>
+  getSnapshot(playerId: string, currentWeekIdentity: string): Promise<WalletSnapshot>
 }
