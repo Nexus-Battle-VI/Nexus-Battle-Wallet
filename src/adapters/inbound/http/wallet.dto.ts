@@ -67,9 +67,11 @@ export class CreditBattleRewardResponseDto {
   @ApiProperty() chestEarned!: boolean
 }
 
-/** Web -> Wallet, `GET /api/v1/wallet/me` (hu-22-reward-contract-v1 S4). */
+/** Web -> Wallet, `GET /api/v1/wallet/me` (hu-22-reward-contract-v1 S4 + HU-23 §6). */
 export class WalletSnapshotResponseDto {
   @ApiProperty() balance!: number
+  @ApiProperty() reserved!: number
+  @ApiProperty() available!: number
   @ApiProperty() victoryProgress!: number
   @ApiProperty() weeklyChestCount!: number
   @ApiProperty() weeklyChestLimit!: number
