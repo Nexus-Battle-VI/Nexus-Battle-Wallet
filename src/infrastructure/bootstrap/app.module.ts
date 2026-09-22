@@ -8,21 +8,60 @@ import { AnonymousIdentityGuard } from '../../adapters/inbound/http/auth/anonymo
 import { InternalServiceGuard } from '../../adapters/inbound/http/auth/internal-service.guard'
 import { JwtAuthGuard } from '../../adapters/inbound/http/auth/jwt-auth.guard'
 import { RolesGuard } from '../../adapters/inbound/http/auth/roles.guard'
+import { WalletController } from '../../adapters/inbound/http/wallet.controller'
+import { WalletInternalController } from '../../adapters/inbound/http/wallet-internal.controller'
+import { WalletStakesInternalController } from '../../adapters/inbound/http/wallet-stakes-internal.controller'
+import { WalletAuctionHoldsController } from '../../adapters/inbound/http/wallet-auction-holds.controller'
+import { InMemoryAuctionHoldRepository } from '../../adapters/outbound/persistence/InMemoryAuctionHoldRepository'
+import { PostgresAuctionHoldRepository } from '../../adapters/outbound/persistence/PostgresAuctionHoldRepository'
 import { CognitoTokenVerifier } from '../../adapters/outbound/identity/CognitoTokenVerifier'
+import { InMemoryStakeRepository } from '../../adapters/outbound/persistence/InMemoryStakeRepository'
+import { InMemoryWalletRepository } from '../../adapters/outbound/persistence/InMemoryWalletRepository'
+import { InMemoryWalletStore } from '../../adapters/outbound/persistence/InMemoryWalletStore'
+import { PostgresStakeRepository } from '../../adapters/outbound/persistence/PostgresStakeRepository'
+import { PostgresWalletRepository } from '../../adapters/outbound/persistence/PostgresWalletRepository'
 import type { Database } from '../../adapters/outbound/persistence/schema'
 import { SystemClock } from '../../adapters/outbound/system/SystemClock'
 import { CLOCK, type ClockPort } from '../../application/ports/ClockPort'
+import {
+  AUCTION_HOLD_REPOSITORY,
+  type AuctionHoldRepositoryPort,
+} from '../../application/ports/AuctionHoldRepositoryPort'
+import { AUCTION_HOLDS, AuctionHolds } from '../../application/use-cases/AuctionHolds'
+import {
+  STAKE_REPOSITORY,
+  type StakeRepositoryPort,
+} from '../../application/ports/StakeRepositoryPort'
 import { TOKEN_VERIFIER, type TokenVerifierPort } from '../../application/ports/TokenVerifierPort'
+import {
+  WALLET_REPOSITORY,
+  type WalletRepositoryPort,
+} from '../../application/ports/WalletRepositoryPort'
+import {
+  CREDIT_BATTLE_REWARD,
+  CreditBattleReward,
+} from '../../application/use-cases/CreditBattleReward'
+import { EXPIRE_STAKES, ExpireStakes } from '../../application/use-cases/ExpireStakes'
+import {
+  GET_WALLET_SNAPSHOT,
+  GetWalletSnapshot,
+} from '../../application/use-cases/GetWalletSnapshot'
+import { RELEASE_STAKE, ReleaseStake } from '../../application/use-cases/ReleaseStake'
+import { RESERVE_STAKE, ReserveStake } from '../../application/use-cases/ReserveStake'
+import { SETTLE_STAKES, SettleStakes } from '../../application/use-cases/SettleStakes'
 import { AuthMode, loadConfig, PersistenceDriver, type AppConfig } from '../config/env'
 import type { ReadinessCheck, VersionReport } from '../health/health'
 import { describeError } from '../observability/describe-error'
 import { createLogger, type Logger } from '../observability/logger'
 import { createDatabase, pingDatabase } from '../persistence/database'
+import { StakeExpiryScheduler } from '../scheduling/stake-expiry.scheduler'
 
 export const APP_CONFIG = Symbol('AppConfig')
 export const LOGGER = Symbol('Logger')
 export const DATABASE = Symbol('Database')
 export const DATABASE_LIFECYCLE = Symbol('DatabaseLifecycle')
+export const IN_MEMORY_WALLET_STORE = Symbol('InMemoryWalletStore')
+export const STAKE_EXPIRY_SCHEDULER = Symbol('StakeExpiryScheduler')
 
 /**
  * Servicios autorizados a llamar a las rutas `@InternalOnly()` de Wallet.
@@ -42,7 +81,13 @@ export const INTERNAL_CALLERS: readonly string[] = ['auction', 'combat', 'missio
  * independiente del framework.
  */
 @Module({
-  controllers: [HealthController],
+  controllers: [
+    HealthController,
+    WalletController,
+    WalletInternalController,
+    WalletStakesInternalController,
+    WalletAuctionHoldsController,
+  ],
   providers: [
     {
       provide: APP_CONFIG,
@@ -173,6 +218,108 @@ export const INTERNAL_CALLERS: readonly string[] = ['auction', 'combat', 'missio
         nodeEnv: config.nodeEnv,
       }),
       inject: [APP_CONFIG],
+    },
+    {
+      // Almacen compartido de los dobles en memoria: `InMemoryWalletRepository`
+      // e `InMemoryStakeRepository` deben ver la MISMA cuenta (una sola fila
+      // por jugador tambien en `PERSISTENCE_DRIVER=memory`).
+      provide: IN_MEMORY_WALLET_STORE,
+      useFactory: (): InMemoryWalletStore => new InMemoryWalletStore(),
+    },
+    {
+      provide: WALLET_REPOSITORY,
+      useFactory: (
+        config: AppConfig,
+        db: Kysely<Database> | null,
+        store: InMemoryWalletStore,
+      ): WalletRepositoryPort =>
+        config.persistenceDriver === PersistenceDriver.Postgres && db !== null
+          ? new PostgresWalletRepository(db)
+          : new InMemoryWalletRepository(store),
+      inject: [APP_CONFIG, DATABASE, IN_MEMORY_WALLET_STORE],
+    },
+    {
+      provide: STAKE_REPOSITORY,
+      useFactory: (
+        config: AppConfig,
+        db: Kysely<Database> | null,
+        store: InMemoryWalletStore,
+      ): StakeRepositoryPort =>
+        config.persistenceDriver === PersistenceDriver.Postgres && db !== null
+          ? new PostgresStakeRepository(db)
+          : new InMemoryStakeRepository(store),
+      inject: [APP_CONFIG, DATABASE, IN_MEMORY_WALLET_STORE],
+    },
+    {
+      provide: AUCTION_HOLD_REPOSITORY,
+      useFactory: (
+        config: AppConfig,
+        db: Kysely<Database> | null,
+        store: InMemoryWalletStore,
+      ): AuctionHoldRepositoryPort =>
+        config.persistenceDriver === PersistenceDriver.Postgres && db !== null
+          ? new PostgresAuctionHoldRepository(db)
+          : new InMemoryAuctionHoldRepository(store),
+      inject: [APP_CONFIG, DATABASE, IN_MEMORY_WALLET_STORE],
+    },
+    {
+      provide: AUCTION_HOLDS,
+      useFactory: (
+        repository: AuctionHoldRepositoryPort,
+        clock: ClockPort,
+        config: AppConfig,
+      ): AuctionHolds =>
+        new AuctionHolds(
+          repository,
+          clock,
+          config.auctionHoldGraceMs,
+          config.auctionMaxCloseAheadMs,
+        ),
+      inject: [AUCTION_HOLD_REPOSITORY, CLOCK, APP_CONFIG],
+    },
+    {
+      provide: CREDIT_BATTLE_REWARD,
+      useFactory: (wallet: WalletRepositoryPort, clock: ClockPort): CreditBattleReward =>
+        new CreditBattleReward(wallet, clock),
+      inject: [WALLET_REPOSITORY, CLOCK],
+    },
+    {
+      provide: GET_WALLET_SNAPSHOT,
+      useFactory: (wallet: WalletRepositoryPort, clock: ClockPort): GetWalletSnapshot =>
+        new GetWalletSnapshot(wallet, clock),
+      inject: [WALLET_REPOSITORY, CLOCK],
+    },
+    {
+      provide: RESERVE_STAKE,
+      useFactory: (stakes: StakeRepositoryPort, clock: ClockPort): ReserveStake =>
+        new ReserveStake(stakes, clock),
+      inject: [STAKE_REPOSITORY, CLOCK],
+    },
+    {
+      provide: RELEASE_STAKE,
+      useFactory: (stakes: StakeRepositoryPort): ReleaseStake => new ReleaseStake(stakes),
+      inject: [STAKE_REPOSITORY],
+    },
+    {
+      provide: SETTLE_STAKES,
+      useFactory: (stakes: StakeRepositoryPort): SettleStakes => new SettleStakes(stakes),
+      inject: [STAKE_REPOSITORY],
+    },
+    {
+      provide: EXPIRE_STAKES,
+      useFactory: (stakes: StakeRepositoryPort, clock: ClockPort): ExpireStakes =>
+        new ExpireStakes(stakes, clock),
+      inject: [STAKE_REPOSITORY, CLOCK],
+    },
+    {
+      provide: STAKE_EXPIRY_SCHEDULER,
+      useFactory: (
+        expireStakes: ExpireStakes,
+        config: AppConfig,
+        logger: Logger,
+      ): StakeExpiryScheduler =>
+        new StakeExpiryScheduler(expireStakes, config.stakeExpiryIntervalMs, logger),
+      inject: [EXPIRE_STAKES, APP_CONFIG, LOGGER],
     },
   ],
 })

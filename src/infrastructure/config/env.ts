@@ -42,6 +42,10 @@ export interface AppConfig {
   readonly authMode: AuthMode
   readonly cognito: CognitoConfig | null
   readonly internalServiceAuthSecret: string | null
+  /** HU-23, D11: cadencia del barrido de reservas vencidas. 0 = apagado. */
+  readonly stakeExpiryIntervalMs: number
+  readonly auctionHoldGraceMs: number
+  readonly auctionMaxCloseAheadMs: number
 }
 
 type RawEnv = Readonly<Record<string, string | undefined>>
@@ -195,5 +199,17 @@ export const loadConfig = (env: RawEnv): AppConfig => {
         ? { userPoolId: cognitoUserPoolId, clientId: cognitoClientId }
         : null,
     internalServiceAuthSecret: internalServiceAuthSecret === '' ? null : internalServiceAuthSecret,
+    // Una reserva huerfana no debe quedar bloqueada mas de lo necesario; 24 h
+    // es la caducidad del hold (D11) y este barrido solo tiene que ser mas
+    // frecuente que eso. 0 lo apaga (pruebas).
+    stakeExpiryIntervalMs: readInteger(env, 'STAKE_EXPIRY_INTERVAL_MS', 60_000, 0, 86_400_000),
+    auctionHoldGraceMs: readInteger(env, 'AUCTION_HOLD_GRACE_MS', 300_000, 1, 86_400_000),
+    auctionMaxCloseAheadMs: readInteger(
+      env,
+      'AUCTION_MAX_CLOSE_AHEAD_MS',
+      172_800_000,
+      1,
+      604_800_000,
+    ),
   }
 }

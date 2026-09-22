@@ -6,6 +6,7 @@ import {
   createDatabase,
   migrateToLatest,
   pingDatabase,
+  MIGRATIONS,
 } from '../../src/infrastructure/persistence/database'
 
 /**
@@ -40,7 +41,12 @@ describe('Persistencia PostgreSQL', () => {
   })
 
   it('registra las migraciones aplicadas y no las repite', async () => {
+    // Incluye las migraciones REALES del producto (ya aplicadas por la
+    // prueba anterior sobre el mismo `db`): el migrador de Kysely exige que
+    // el historial ya ejecutado sea un prefijo de la lista que recibe, o no
+    // reconoce la migracion nueva como pendiente.
     const migrations: Record<string, Migration> = {
+      ...MIGRATIONS,
       '900-prueba': {
         up: async (conexion: Kysely<unknown>) => {
           await conexion.schema.createTable('prueba').addColumn('id', 'text').execute()
@@ -59,6 +65,7 @@ describe('Persistencia PostgreSQL', () => {
 
   it('informa una migracion rota en lugar de darla por aplicada', async () => {
     const outcome = await migrateToLatest(db, {
+      ...MIGRATIONS,
       '900-prueba': { up: () => Promise.resolve() },
       '901-rota': { up: () => Promise.reject(new Error('sql invalido')) },
     })

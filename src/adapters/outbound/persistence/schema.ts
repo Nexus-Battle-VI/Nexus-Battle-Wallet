@@ -1,3 +1,7 @@
+import type { ColumnType, Generated } from 'kysely'
+
+import type { StakeHoldStatus } from '../../../domain/value-objects/stake-hold'
+
 /**
  * Esquema de la base de datos del servicio, tipado para Kysely.
  *
@@ -8,8 +12,106 @@
  *
  * Nombres de columna en `snake_case`, que es la convencion de PostgreSQL. La
  * traduccion a la instantanea del agregado ocurre en un `mapping.ts` explicito.
- *
- * Vacio en el andamiaje: ninguna Historia de Usuario ha definido todavia tablas.
  */
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface Database {}
+export interface WalletAccountsTable {
+  readonly player_id: string
+  readonly balance: ColumnType<string, string | number | undefined, string | number>
+  readonly reserved: ColumnType<string, string | number | undefined, string | number>
+  readonly victory_progress: ColumnType<number, number | undefined, number>
+  readonly weekly_chest_count: ColumnType<number, number | undefined, number>
+  readonly week_identity: string
+  readonly updated_at: ColumnType<Date, Date | string | undefined, Date | string>
+}
+
+export interface WalletLedgerTable {
+  readonly id: Generated<string>
+  readonly operation_id: string
+  readonly player_id: string
+  readonly battle_id: string
+  readonly reason: string
+  readonly credits_amount: number
+  readonly victory_credits_amount: number
+  readonly occurred_at: ColumnType<Date, Date | string, Date | string>
+  readonly resulting_balance: ColumnType<string, string | number, never>
+  readonly resulting_victory_progress: number
+  readonly resulting_weekly_chest_count: number
+  readonly resulting_week_identity: string
+  readonly chest_earned: boolean
+  readonly created_at: ColumnType<Date, Date | string | undefined, never>
+}
+
+export interface Database {
+  readonly wallet_accounts: WalletAccountsTable
+  readonly wallet_ledger: WalletLedgerTable
+  readonly wallet_stake_holds: WalletStakeHoldsTable
+  readonly wallet_stake_ledger: WalletStakeLedgerTable
+  readonly wallet_auction_holds: WalletAuctionHoldsTable
+  readonly wallet_auction_hold_operations: WalletAuctionHoldOperationsTable
+  readonly wallet_auction_hold_ledger: WalletAuctionHoldLedgerTable
+}
+
+/**
+ * Estado mutable de cada reserva de apuesta (HU-23). Uno por `operation_id`
+ * determinista de reserva; `expires_at` es la red de seguridad de D11.
+ */
+export interface WalletStakeHoldsTable {
+  readonly operation_id: string
+  readonly player_id: string
+  readonly battle_id: string
+  readonly amount: ColumnType<string, string | number, string | number>
+  readonly status: ColumnType<StakeHoldStatus, StakeHoldStatus, StakeHoldStatus>
+  readonly created_at: ColumnType<Date, Date | string | undefined, Date | string>
+  readonly updated_at: ColumnType<Date, Date | string | undefined, Date | string>
+  readonly expires_at: ColumnType<Date, Date | string, Date | string>
+}
+
+export type StakeLedgerKind = 'RESERVE' | 'RELEASE' | 'SETTLE_CAPTURE' | 'SETTLE_CREDIT' | 'EXPIRE'
+
+/** Insert-only: un movimiento por cada llamada aplicada de verdad. */
+export interface WalletStakeLedgerTable {
+  readonly id: Generated<string>
+  readonly operation_id: string
+  readonly kind: ColumnType<StakeLedgerKind, StakeLedgerKind, never>
+  readonly hold_operation_id: string
+  readonly player_id: string
+  readonly battle_id: string
+  readonly amount: ColumnType<string, string | number, never>
+  readonly resulting_balance: ColumnType<string, string | number, never>
+  readonly resulting_reserved: ColumnType<string, string | number, never>
+  readonly created_at: ColumnType<Date, Date | string | undefined, never>
+}
+
+export interface WalletAuctionHoldsTable {
+  readonly id: string
+  readonly creation_operation_id: string
+  readonly player_id: string
+  readonly amount: ColumnType<string, string | number, string | number>
+  readonly auction_id: string
+  readonly bid_id: string
+  readonly reason: string
+  readonly status: ColumnType<
+    'ACTIVE' | 'CAPTURED' | 'RELEASED' | 'EXPIRED',
+    'ACTIVE' | 'CAPTURED' | 'RELEASED' | 'EXPIRED',
+    'ACTIVE' | 'CAPTURED' | 'RELEASED' | 'EXPIRED'
+  >
+  readonly created_at: ColumnType<Date, Date | string, Date | string>
+  readonly updated_at: ColumnType<Date, Date | string, Date | string>
+  readonly expires_at: ColumnType<Date, Date | string, Date | string>
+}
+export interface WalletAuctionHoldOperationsTable {
+  readonly operation_id: string
+  readonly intent: unknown
+  readonly result: unknown
+  readonly created_at: ColumnType<Date, Date | string, Date | string>
+}
+export interface WalletAuctionHoldLedgerTable {
+  readonly id: Generated<string>
+  readonly operation_id: string
+  readonly hold_id: string
+  readonly player_id: string
+  readonly kind: string
+  readonly amount: ColumnType<string, string | number, string | number>
+  readonly resulting_balance: ColumnType<string, string | number, string | number>
+  readonly resulting_reserved: ColumnType<string, string | number, string | number>
+  readonly created_at: ColumnType<Date, Date | string, Date | string>
+}
