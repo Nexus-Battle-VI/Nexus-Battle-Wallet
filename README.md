@@ -15,9 +15,9 @@ Este repositorio contiene código y Pull Requests. No contiene Issues ni Product
 
 ## Estado
 
-**Andamiaje desplegado.** Desde el 2026-09-16 corre en producción en el nodo `app` y Caddy le envía `https://nexus.simuladorupbbga.app/api/v1/wallet*`. Arranca, verifica identidad, firma y comprueba el contrato interno, expone sus sondas y conecta con su base, que ya existe con usuario propio.
+Desde el 2026-09-16 corre en producción en el nodo `app` y Caddy le envía `https://nexus.simuladorupbbga.app/api/v1/wallet*`. Arranca, verifica identidad, firma y comprueba el contrato interno, expone sus sondas y conecta con su base, que ya existe con usuario propio.
 
-**No tiene todavía ninguna ruta de negocio ni ninguna tabla o colección**: las añade cada Historia de Usuario. Mientras tanto, cualquier ruta bajo ese prefijo responde `404` desde NestJS.
+**Primeras rutas de negocio: HU-22** (Task HU-22.2, ver [docs/hu-22-battle-rewards.md](docs/hu-22-battle-rewards.md)). `wallet_accounts` y `wallet_ledger` (migración `001-wallet-accounts`) son las primeras tablas; cualquier otra ruta bajo el prefijo sigue respondiendo `404` desde NestJS hasta que la HU correspondiente la añada.
 
 ## Qué posee este contexto
 
@@ -25,6 +25,7 @@ Este repositorio contiene código y Pull Requests. No contiene Issues ni Product
 - Reservas con caducidad (`ACTIVE` → `CAPTURED` | `RELEASED` | `EXPIRED`).
 - Libro de movimientos **insert-only**: cada cambio de saldo deja una entrada con su `operationId`.
 - Cuentas de sistema para comisiones (por ejemplo, las de publicación de subastas).
+- Progreso de créditos de victoria y contador semanal de cofres (HU-22).
 
 Ningún otro servicio accede a este almacén, ni directamente ni con claves foráneas.
 

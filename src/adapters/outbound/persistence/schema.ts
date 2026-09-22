@@ -1,3 +1,5 @@
+import type { ColumnType, Generated } from 'kysely'
+
 /**
  * Esquema de la base de datos del servicio, tipado para Kysely.
  *
@@ -8,8 +10,34 @@
  *
  * Nombres de columna en `snake_case`, que es la convencion de PostgreSQL. La
  * traduccion a la instantanea del agregado ocurre en un `mapping.ts` explicito.
- *
- * Vacio en el andamiaje: ninguna Historia de Usuario ha definido todavia tablas.
  */
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface Database {}
+export interface WalletAccountsTable {
+  readonly player_id: string
+  readonly balance: ColumnType<string, string | number | undefined, string | number>
+  readonly victory_progress: ColumnType<number, number | undefined, number>
+  readonly weekly_chest_count: ColumnType<number, number | undefined, number>
+  readonly week_identity: string
+  readonly updated_at: ColumnType<Date, Date | string | undefined, Date | string>
+}
+
+export interface WalletLedgerTable {
+  readonly id: Generated<string>
+  readonly operation_id: string
+  readonly player_id: string
+  readonly battle_id: string
+  readonly reason: string
+  readonly credits_amount: number
+  readonly victory_credits_amount: number
+  readonly occurred_at: ColumnType<Date, Date | string, Date | string>
+  readonly resulting_balance: ColumnType<string, string | number, never>
+  readonly resulting_victory_progress: number
+  readonly resulting_weekly_chest_count: number
+  readonly resulting_week_identity: string
+  readonly chest_earned: boolean
+  readonly created_at: ColumnType<Date, Date | string | undefined, never>
+}
+
+export interface Database {
+  readonly wallet_accounts: WalletAccountsTable
+  readonly wallet_ledger: WalletLedgerTable
+}

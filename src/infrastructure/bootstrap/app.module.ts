@@ -8,11 +8,27 @@ import { AnonymousIdentityGuard } from '../../adapters/inbound/http/auth/anonymo
 import { InternalServiceGuard } from '../../adapters/inbound/http/auth/internal-service.guard'
 import { JwtAuthGuard } from '../../adapters/inbound/http/auth/jwt-auth.guard'
 import { RolesGuard } from '../../adapters/inbound/http/auth/roles.guard'
+import { WalletController } from '../../adapters/inbound/http/wallet.controller'
+import { WalletInternalController } from '../../adapters/inbound/http/wallet-internal.controller'
 import { CognitoTokenVerifier } from '../../adapters/outbound/identity/CognitoTokenVerifier'
+import { InMemoryWalletRepository } from '../../adapters/outbound/persistence/InMemoryWalletRepository'
+import { PostgresWalletRepository } from '../../adapters/outbound/persistence/PostgresWalletRepository'
 import type { Database } from '../../adapters/outbound/persistence/schema'
 import { SystemClock } from '../../adapters/outbound/system/SystemClock'
 import { CLOCK, type ClockPort } from '../../application/ports/ClockPort'
 import { TOKEN_VERIFIER, type TokenVerifierPort } from '../../application/ports/TokenVerifierPort'
+import {
+  WALLET_REPOSITORY,
+  type WalletRepositoryPort,
+} from '../../application/ports/WalletRepositoryPort'
+import {
+  CREDIT_BATTLE_REWARD,
+  CreditBattleReward,
+} from '../../application/use-cases/CreditBattleReward'
+import {
+  GET_WALLET_SNAPSHOT,
+  GetWalletSnapshot,
+} from '../../application/use-cases/GetWalletSnapshot'
 import { AuthMode, loadConfig, PersistenceDriver, type AppConfig } from '../config/env'
 import type { ReadinessCheck, VersionReport } from '../health/health'
 import { describeError } from '../observability/describe-error'
@@ -42,7 +58,7 @@ export const INTERNAL_CALLERS: readonly string[] = ['auction', 'combat', 'missio
  * independiente del framework.
  */
 @Module({
-  controllers: [HealthController],
+  controllers: [HealthController, WalletController, WalletInternalController],
   providers: [
     {
       provide: APP_CONFIG,
@@ -173,6 +189,26 @@ export const INTERNAL_CALLERS: readonly string[] = ['auction', 'combat', 'missio
         nodeEnv: config.nodeEnv,
       }),
       inject: [APP_CONFIG],
+    },
+    {
+      provide: WALLET_REPOSITORY,
+      useFactory: (config: AppConfig, db: Kysely<Database> | null): WalletRepositoryPort =>
+        config.persistenceDriver === PersistenceDriver.Postgres && db !== null
+          ? new PostgresWalletRepository(db)
+          : new InMemoryWalletRepository(),
+      inject: [APP_CONFIG, DATABASE],
+    },
+    {
+      provide: CREDIT_BATTLE_REWARD,
+      useFactory: (wallet: WalletRepositoryPort, clock: ClockPort): CreditBattleReward =>
+        new CreditBattleReward(wallet, clock),
+      inject: [WALLET_REPOSITORY, CLOCK],
+    },
+    {
+      provide: GET_WALLET_SNAPSHOT,
+      useFactory: (wallet: WalletRepositoryPort, clock: ClockPort): GetWalletSnapshot =>
+        new GetWalletSnapshot(wallet, clock),
+      inject: [WALLET_REPOSITORY, CLOCK],
     },
   ],
 })

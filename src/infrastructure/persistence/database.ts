@@ -9,6 +9,7 @@ import {
 } from 'kysely'
 import { Pool } from 'pg'
 
+import * as walletAccounts from '../../adapters/outbound/persistence/migrations/001-wallet-accounts'
 import type { Database } from '../../adapters/outbound/persistence/schema'
 
 export interface DatabaseOptions {
@@ -65,10 +66,13 @@ export const createDatabase = (options: DatabaseOptions): Kysely<Database> => {
  * ruta. Importarlas explicitamente hace que el compilador las verifique y que
  * el empaquetado no pueda dejarse ninguna fuera en silencio.
  *
- * Esta vacio a proposito: el andamiaje no inventa tablas. Cada Historia de
- * Usuario anade aqui su migracion, con prefijo numerico que fija el orden.
+ * Cada Historia de Usuario anade aqui su migracion, con prefijo numerico que
+ * fija el orden. `001-wallet-accounts` (HU-22, Task HU-22.2) es la primera:
+ * el andamiaje no creaba ninguna tabla de negocio.
  */
-export const MIGRATIONS: Readonly<Record<string, Migration>> = {}
+export const MIGRATIONS: Readonly<Record<string, Migration>> = {
+  '001-wallet-accounts': walletAccounts,
+}
 
 export interface MigrationOutcome {
   readonly applied: readonly string[]
