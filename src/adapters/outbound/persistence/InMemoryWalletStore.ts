@@ -5,6 +5,10 @@ import type {
   AuctionHoldStatus,
   AuctionHoldResult,
 } from '../../../application/ports/AuctionHoldRepositoryPort'
+import type {
+  BuyNowTransferStatus,
+  BuyNowTransferResult,
+} from '../../../application/ports/BuyNowTransferRepositoryPort'
 
 /**
  * Estado compartido de los dobles en memoria (`PERSISTENCE_DRIVER=memory`).
@@ -75,4 +79,18 @@ export class InMemoryWalletStore {
     }
   >()
   readonly auctionOperations = new Map<string, { intent: string; result: AuctionHoldResult }>()
+  readonly buyNowTransfers = new Map<
+    string,
+    {
+      id: string
+      buyerId: string
+      sellerId: string
+      amount: number
+      status: BuyNowTransferStatus
+    }
+  >()
+  readonly buyNowTransferOperations = new Map<
+    string,
+    { intent: string; result: BuyNowTransferResult }
+  >()
 }

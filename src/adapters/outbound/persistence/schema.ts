@@ -48,6 +48,47 @@ export interface Database {
   readonly wallet_auction_holds: WalletAuctionHoldsTable
   readonly wallet_auction_hold_operations: WalletAuctionHoldOperationsTable
   readonly wallet_auction_hold_ledger: WalletAuctionHoldLedgerTable
+  readonly wallet_buy_now_transfers: WalletBuyNowTransfersTable
+  readonly wallet_buy_now_transfer_operations: WalletBuyNowTransferOperationsTable
+  readonly wallet_buy_now_transfer_ledger: WalletBuyNowTransferLedgerTable
+}
+
+/**
+ * Transferencia directa comprador -> vendedor de una compra inmediata
+ * (HU-64.8). Sin estado de reserva intermedio: `status` solo distingue si ya
+ * se revirtio.
+ */
+export interface WalletBuyNowTransfersTable {
+  readonly id: string
+  readonly buyer_id: string
+  readonly seller_id: string
+  readonly amount: ColumnType<string, string | number, string | number>
+  readonly status: ColumnType<
+    'APPLIED' | 'REVERSED',
+    'APPLIED' | 'REVERSED',
+    'APPLIED' | 'REVERSED'
+  >
+  readonly created_at: ColumnType<Date, Date | string, Date | string>
+  readonly updated_at: ColumnType<Date, Date | string, Date | string>
+}
+
+export interface WalletBuyNowTransferOperationsTable {
+  readonly operation_id: string
+  readonly intent: unknown
+  readonly result: unknown
+  readonly created_at: ColumnType<Date, Date | string, Date | string>
+}
+
+export interface WalletBuyNowTransferLedgerTable {
+  readonly id: Generated<string>
+  readonly operation_id: string
+  readonly transfer_id: string
+  readonly player_id: string
+  readonly kind: string
+  readonly amount: ColumnType<string, string | number, string | number>
+  readonly resulting_balance: ColumnType<string, string | number, string | number>
+  readonly resulting_reserved: ColumnType<string, string | number, string | number>
+  readonly created_at: ColumnType<Date, Date | string, Date | string>
 }
 
 /**
