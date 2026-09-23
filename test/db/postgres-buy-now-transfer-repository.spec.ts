@@ -38,9 +38,10 @@ describe('PostgresBuyNowTransferRepository', () => {
   }
   const row = async (id: string) =>
     (
-      await sql<{ balance: string; reserved: string }>`select balance,reserved from wallet_accounts where player_id=${id}`.execute(
-        db,
-      )
+      await sql<{
+        balance: string
+        reserved: string
+      }>`select balance,reserved from wallet_accounts where player_id=${id}`.execute(db)
     ).rows[0]
 
   it('migracion 004 crea las tablas y aplica sus restricciones', async () => {

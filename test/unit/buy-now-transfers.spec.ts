@@ -58,7 +58,12 @@ describe('BuyNowTransfers (HU-64.8)', () => {
     const { useCase, store } = setup(5000)
 
     await expect(
-      useCase.transfer({ operationId: 'op-2', buyerId: 'comprador', sellerId: 'vendedor', amount: 0 }),
+      useCase.transfer({
+        operationId: 'op-2',
+        buyerId: 'comprador',
+        sellerId: 'vendedor',
+        amount: 0,
+      }),
     ).rejects.toBeInstanceOf(InvalidBuyNowTransferAmountError)
     await expect(
       useCase.transfer({

@@ -38,7 +38,13 @@ describe('Wallet compra inmediata HTTP (HU-64.8)', () => {
     service = 'auction',
   ) => {
     const timestamp = String(Date.now())
-    const signature = signInternalRequest(secret, { service, method: method.toUpperCase(), path, timestamp, body })
+    const signature = signInternalRequest(secret, {
+      service,
+      method: method.toUpperCase(),
+      path,
+      timestamp,
+      body,
+    })
     const req = request(app.getHttpServer())
       [method](path)
       .set('x-internal-service', service)
@@ -48,11 +54,7 @@ describe('Wallet compra inmediata HTTP (HU-64.8)', () => {
     return method === 'post' ? req.send(body) : req
   }
 
-  const account = (
-    playerId: string,
-    balance: number,
-    reserved = 0,
-  ): void => {
+  const account = (playerId: string, balance: number, reserved = 0): void => {
     store().accounts.set(playerId, {
       balance,
       reserved,
