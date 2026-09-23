@@ -12,8 +12,11 @@ import { WalletController } from '../../adapters/inbound/http/wallet.controller'
 import { WalletInternalController } from '../../adapters/inbound/http/wallet-internal.controller'
 import { WalletStakesInternalController } from '../../adapters/inbound/http/wallet-stakes-internal.controller'
 import { WalletAuctionHoldsController } from '../../adapters/inbound/http/wallet-auction-holds.controller'
+import { WalletBuyNowTransfersController } from '../../adapters/inbound/http/wallet-buy-now-transfers.controller'
 import { InMemoryAuctionHoldRepository } from '../../adapters/outbound/persistence/InMemoryAuctionHoldRepository'
+import { InMemoryBuyNowTransferRepository } from '../../adapters/outbound/persistence/InMemoryBuyNowTransferRepository'
 import { PostgresAuctionHoldRepository } from '../../adapters/outbound/persistence/PostgresAuctionHoldRepository'
+import { PostgresBuyNowTransferRepository } from '../../adapters/outbound/persistence/PostgresBuyNowTransferRepository'
 import { CognitoTokenVerifier } from '../../adapters/outbound/identity/CognitoTokenVerifier'
 import { InMemoryStakeRepository } from '../../adapters/outbound/persistence/InMemoryStakeRepository'
 import { InMemoryWalletRepository } from '../../adapters/outbound/persistence/InMemoryWalletRepository'
@@ -28,6 +31,11 @@ import {
   type AuctionHoldRepositoryPort,
 } from '../../application/ports/AuctionHoldRepositoryPort'
 import { AUCTION_HOLDS, AuctionHolds } from '../../application/use-cases/AuctionHolds'
+import {
+  BUY_NOW_TRANSFER_REPOSITORY,
+  type BuyNowTransferRepositoryPort,
+} from '../../application/ports/BuyNowTransferRepositoryPort'
+import { BUY_NOW_TRANSFERS, BuyNowTransfers } from '../../application/use-cases/BuyNowTransfers'
 import {
   STAKE_REPOSITORY,
   type StakeRepositoryPort,
@@ -87,6 +95,7 @@ export const INTERNAL_CALLERS: readonly string[] = ['auction', 'combat', 'missio
     WalletInternalController,
     WalletStakesInternalController,
     WalletAuctionHoldsController,
+    WalletBuyNowTransfersController,
   ],
   providers: [
     {
@@ -276,6 +285,24 @@ export const INTERNAL_CALLERS: readonly string[] = ['auction', 'combat', 'missio
           config.auctionMaxCloseAheadMs,
         ),
       inject: [AUCTION_HOLD_REPOSITORY, CLOCK, APP_CONFIG],
+    },
+    {
+      provide: BUY_NOW_TRANSFER_REPOSITORY,
+      useFactory: (
+        config: AppConfig,
+        db: Kysely<Database> | null,
+        store: InMemoryWalletStore,
+      ): BuyNowTransferRepositoryPort =>
+        config.persistenceDriver === PersistenceDriver.Postgres && db !== null
+          ? new PostgresBuyNowTransferRepository(db)
+          : new InMemoryBuyNowTransferRepository(store),
+      inject: [APP_CONFIG, DATABASE, IN_MEMORY_WALLET_STORE],
+    },
+    {
+      provide: BUY_NOW_TRANSFERS,
+      useFactory: (repository: BuyNowTransferRepositoryPort, clock: ClockPort): BuyNowTransfers =>
+        new BuyNowTransfers(repository, clock),
+      inject: [BUY_NOW_TRANSFER_REPOSITORY, CLOCK],
     },
     {
       provide: CREDIT_BATTLE_REWARD,
