@@ -30,6 +30,11 @@ import {
 import { OperationConflictError } from '../../../application/errors/WalletPersistenceError'
 import { DomainError } from '../../../domain/errors/DomainError'
 import { InvalidStakeAmountError } from '../../../domain/value-objects/stake-amount'
+import {
+  AuctionPublicationFeeInsufficientBalanceError,
+  AuctionPublicationFeeNotFoundError,
+  InvalidAuctionPublicationFeeAmountError,
+} from '../../../application/errors/AuctionPublicationFeeError'
 
 const body = (statusCode: number, code: string, message: string): Record<string, unknown> => ({
   statusCode,
@@ -42,6 +47,13 @@ export const toWalletHttpException = (error: unknown): HttpException => {
   if (error instanceof OperationConflictError) {
     return new ConflictException(body(409, 'OPERATION_CONFLICT', error.message))
   }
+  if (error instanceof AuctionPublicationFeeNotFoundError)
+    return new NotFoundException(body(404, 'PUBLICATION_FEE_NOT_FOUND', error.message))
+  if (
+    error instanceof AuctionPublicationFeeInsufficientBalanceError ||
+    error instanceof InvalidAuctionPublicationFeeAmountError
+  )
+    return new UnprocessableEntityException(body(422, 'PUBLICATION_FEE_INVALID', error.message))
   if (error instanceof AuctionHoldNotFoundError)
     return new NotFoundException(body(404, 'HOLD_NOT_FOUND', error.message))
   if (
