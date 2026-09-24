@@ -51,6 +51,30 @@ export interface Database {
   readonly wallet_buy_now_transfers: WalletBuyNowTransfersTable
   readonly wallet_buy_now_transfer_operations: WalletBuyNowTransferOperationsTable
   readonly wallet_buy_now_transfer_ledger: WalletBuyNowTransferLedgerTable
+  readonly wallet_auction_publication_fees: WalletAuctionPublicationFeesTable
+  readonly wallet_auction_publication_fee_refunds: WalletAuctionPublicationFeeRefundsTable
+}
+export interface WalletAuctionPublicationFeesTable {
+  readonly charge_id: string
+  readonly operation_id: string
+  readonly seller_id: string
+  readonly amount: ColumnType<string, string | number, string | number>
+  readonly status: ColumnType<
+    'CHARGED' | 'REFUNDED',
+    'CHARGED' | 'REFUNDED',
+    'CHARGED' | 'REFUNDED'
+  >
+  readonly created_at: ColumnType<Date, Date | string, Date | string>
+  readonly refunded_at: ColumnType<
+    Date | null,
+    Date | string | null | undefined,
+    Date | string | null
+  >
+}
+export interface WalletAuctionPublicationFeeRefundsTable {
+  readonly operation_id: string
+  readonly charge_id: string
+  readonly created_at: ColumnType<Date, Date | string, Date | string>
 }
 
 /**
