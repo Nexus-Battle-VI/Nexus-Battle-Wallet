@@ -21,6 +21,12 @@ import {
   ExpiredAuctionHoldDateError,
   InvalidAuctionHoldDateError,
 } from '../../../application/errors/AuctionHoldError'
+import {
+  BuyNowTransferInsufficientBalanceError,
+  BuyNowTransferNotFoundError,
+  BuyNowTransferSameAccountError,
+  InvalidBuyNowTransferAmountError,
+} from '../../../application/errors/BuyNowTransferError'
 import { OperationConflictError } from '../../../application/errors/WalletPersistenceError'
 import { DomainError } from '../../../domain/errors/DomainError'
 import { InvalidStakeAmountError } from '../../../domain/value-objects/stake-amount'
@@ -47,6 +53,18 @@ export const toWalletHttpException = (error: unknown): HttpException => {
     error instanceof AuctionHoldDateTooFarError
   )
     return new UnprocessableEntityException(body(422, 'AUCTION_HOLD_INVALID', error.message))
+
+  // Compra inmediata (HU-64.8).
+  if (error instanceof BuyNowTransferNotFoundError) {
+    return new NotFoundException(body(404, 'BUY_NOW_TRANSFER_NOT_FOUND', error.message))
+  }
+  if (
+    error instanceof BuyNowTransferInsufficientBalanceError ||
+    error instanceof BuyNowTransferSameAccountError ||
+    error instanceof InvalidBuyNowTransferAmountError
+  ) {
+    return new UnprocessableEntityException(body(422, 'BUY_NOW_TRANSFER_INVALID', error.message))
+  }
 
   // Apuestas (HU-23): cada rechazo terminal lleva su `code` del contrato §11.
   if (error instanceof InsufficientAvailableBalanceError) {
