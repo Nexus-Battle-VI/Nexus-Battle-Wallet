@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   HttpException,
   ServiceUnavailableException,
@@ -27,6 +28,10 @@ import {
   BuyNowTransferSameAccountError,
   InvalidBuyNowTransferAmountError,
 } from '../../../application/errors/BuyNowTransferError'
+import {
+  InvalidMissionRewardAmountError,
+  MissionRewardSchemaError,
+} from '../../../application/errors/MissionRewardError'
 import { OperationConflictError } from '../../../application/errors/WalletPersistenceError'
 import { DomainError } from '../../../domain/errors/DomainError'
 import { InvalidStakeAmountError } from '../../../domain/value-objects/stake-amount'
@@ -44,6 +49,14 @@ const body = (statusCode: number, code: string, message: string): Record<string,
 
 /** Semantica de codigos de HU-59/ADR-019, S3 de HU-22 y §11 de HU-23. */
 export const toWalletHttpException = (error: unknown): HttpException => {
+  // Credito de mision (HU-10.3): cuerpo fuera del contrato -> 400; importe que
+  // incumple una regla -> 422. Cada uno con su `code` del contrato.
+  if (error instanceof MissionRewardSchemaError) {
+    return new BadRequestException(body(400, 'SCHEMA_INVALID', error.message))
+  }
+  if (error instanceof InvalidMissionRewardAmountError) {
+    return new UnprocessableEntityException(body(422, 'MISSION_REWARD_INVALID', error.message))
+  }
   if (error instanceof OperationConflictError) {
     return new ConflictException(body(409, 'OPERATION_CONFLICT', error.message))
   }

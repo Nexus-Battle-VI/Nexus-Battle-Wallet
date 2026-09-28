@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger'
 import {
+  Allow,
   IsDateString,
   IsIn,
   IsInt,
@@ -76,4 +77,58 @@ export class WalletSnapshotResponseDto {
   @ApiProperty() weeklyChestCount!: number
   @ApiProperty() weeklyChestLimit!: number
   @ApiProperty() threshold!: number
+}
+
+/**
+ * Missions -> Wallet, `POST /api/internal/v1/wallet/credits/mission-reward`
+ * (`hu-10-mission-completion-reward-v1` §9.2, HU-10.3).
+ *
+ * `@Allow()` SOLO DECLARA LOS CAMPOS ANTE EL `ValidationPipe` (`whitelist`): un
+ * campo que el contrato no declara sigue siendo `400`. La VALIDACION de cada
+ * campo la hace `CreditMissionReward`, porque es quien puede responder con el
+ * `code` del contrato (`400 SCHEMA_INVALID` para un cuerpo mal formado, `422
+ * MISSION_REWARD_INVALID` para un importe que incumple una regla); un decorador
+ * aqui saldria con el cuerpo estandar de Nest, sin `code`.
+ */
+export class CreditMissionRewardRequestDto {
+  @ApiProperty({ enum: [1] }) @Allow() schemaVersion!: unknown
+
+  @ApiProperty({ example: 'mission:enr_01JB8Y3K7Q:reward:guaranteed:credits' })
+  @Allow()
+  operationId!: unknown
+
+  @ApiProperty({ description: 'Jugador de la matricula. Nunca lo elige un cliente.' })
+  @Allow()
+  playerId!: unknown
+
+  @ApiProperty({ enum: ['MISSION_REWARD'] }) @Allow() reason!: unknown
+  @ApiProperty() @Allow() enrollmentId!: unknown
+  @ApiProperty() @Allow() missionId!: unknown
+
+  @ApiProperty({ enum: ['NORMAL', 'HEROIC', 'LEGENDARY', 'MYTHIC'] })
+  @Allow()
+  difficulty!: unknown
+
+  @ApiProperty({ example: 'guaranteed:credits' }) @Allow() rewardKey!: unknown
+
+  @ApiProperty({
+    minimum: 1,
+    description:
+      'Entero congelado por Missions. Wallet no decide cuantos creditos vale una mision.',
+  })
+  @Allow()
+  creditsAmount!: unknown
+
+  @ApiProperty({ description: 'El `settledAt` congelado de Missions; identico en cada reintento.' })
+  @Allow()
+  occurredAt!: unknown
+}
+
+/** Respuesta minima: sin victoryProgress, weeklyChestCount, weekIdentity ni chestEarned. */
+export class CreditMissionRewardResponseDto {
+  @ApiProperty() operationId!: string
+  @ApiProperty({ description: '`false` en el replay de una operacion ya aplicada.' })
+  applied!: boolean
+
+  @ApiProperty() balance!: number
 }
