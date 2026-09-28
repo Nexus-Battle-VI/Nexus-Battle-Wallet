@@ -11,12 +11,17 @@ import { CreditBattleRewardRequestDto, CreditBattleRewardResponseDto } from './w
 import { toWalletHttpException } from './wallet-error.mapper'
 
 /**
- * Contrato interno Combat -> Wallet (hu-22-reward-contract-v1, S3). Solo
- * `combat` esta en `INTERNAL_CALLERS`; el guard global de firma HMAC ya lo
- * exige antes de llegar aqui.
+ * Contrato interno Combat -> Wallet (hu-22-reward-contract-v1, S3).
+ *
+ * SOLO `combat`. La lista global de Wallet (`INTERNAL_CALLERS`) incluye a
+ * `auction` y `missions`, y con `@InternalOnly()` a secas esta ruta admitia a
+ * cualquiera de ellos: el comentario decia «solo combat» pero el guard no lo
+ * hacia cumplir (hallazgo de HU-10.1, `hu-10-mission-completion-reward-v1` §9.4).
+ * Ahora la ruta se acota a `combat`: una mision no es una batalla y Missions
+ * usa `POST /credits/mission-reward`.
  */
 @ApiTags('wallet-internal')
-@InternalOnly()
+@InternalOnly('combat')
 @Controller('internal/v1/wallet/credits')
 export class WalletInternalController {
   constructor(

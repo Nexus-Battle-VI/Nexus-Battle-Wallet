@@ -14,6 +14,7 @@ import * as walletStakes from '../../adapters/outbound/persistence/migrations/00
 import * as walletAuctionHolds from '../../adapters/outbound/persistence/migrations/003-wallet-auction-holds'
 import * as walletBuyNowTransfers from '../../adapters/outbound/persistence/migrations/004-wallet-buy-now-transfers'
 import * as walletAuctionPublicationFees from '../../adapters/outbound/persistence/migrations/005-wallet-auction-publication-fees'
+import * as walletMissionRewardCredits from '../../adapters/outbound/persistence/migrations/006-wallet-mission-reward-credits'
 import type { Database } from '../../adapters/outbound/persistence/schema'
 
 export interface DatabaseOptions {
@@ -81,6 +82,7 @@ export const MIGRATIONS: Readonly<Record<string, Migration>> = {
   '003-wallet-auction-holds': walletAuctionHolds,
   '004-wallet-buy-now-transfers': walletBuyNowTransfers,
   '005-wallet-auction-publication-fees': walletAuctionPublicationFees,
+  '006-wallet-mission-reward-credits': walletMissionRewardCredits,
 }
 
 export interface MigrationOutcome {

@@ -40,9 +40,25 @@ export interface WalletLedgerTable {
   readonly created_at: ColumnType<Date, Date | string | undefined, never>
 }
 
+/** Ledger insert-only de los creditos de mision (HU-10.3, migracion `006`). */
+export interface WalletMissionRewardCreditsTable {
+  readonly operation_id: string
+  readonly player_id: string
+  readonly reason: string
+  readonly enrollment_id: string
+  readonly mission_id: string
+  readonly difficulty: string
+  readonly reward_key: string
+  readonly credits_amount: ColumnType<string, string | number, never>
+  readonly occurred_at: ColumnType<Date, Date | string, never>
+  readonly resulting_balance: ColumnType<string, string | number, never>
+  readonly created_at: ColumnType<Date, Date | string | undefined, never>
+}
+
 export interface Database {
   readonly wallet_accounts: WalletAccountsTable
   readonly wallet_ledger: WalletLedgerTable
+  readonly wallet_mission_reward_credits: WalletMissionRewardCreditsTable
   readonly wallet_stake_holds: WalletStakeHoldsTable
   readonly wallet_stake_ledger: WalletStakeLedgerTable
   readonly wallet_auction_holds: WalletAuctionHoldsTable
