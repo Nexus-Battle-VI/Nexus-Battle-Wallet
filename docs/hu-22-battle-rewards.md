@@ -9,7 +9,7 @@
 
 Wallet pasa de andamiaje puro a tener sus **primeras rutas y tablas de negocio**:
 
-- `POST /api/internal/v1/wallet/credits/battle-reward` (interno, HMAC, solo `combat`): acredita el derecho de HU-21 (`BattleCreditsPolicy`, ya calculado por Combat) y evalúa si corresponde cofre.
+- `POST /api/internal/v1/wallet/credits/battle-reward` (interno, HMAC, solo `combat`, **hecho cumplir por ruta con `@InternalOnly('combat')` desde HU-10.3**; antes el guard admitía también a `missions` y `auction`): acredita el derecho de HU-21 (`BattleCreditsPolicy`, ya calculado por Combat) y evalúa si corresponde cofre.
 - `GET /api/v1/wallet/me` (público, JWT): saldo, progreso de victoria, contador semanal de cofres y umbral, para el jugador autenticado (`sub` del token, nunca un parámetro).
 
 ## Reglas aplicadas (sin inventar ninguna)

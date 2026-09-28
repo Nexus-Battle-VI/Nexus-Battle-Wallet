@@ -19,6 +19,8 @@ Desde el 2026-09-16 corre en producción en el nodo `app` y Caddy le envía `htt
 
 **Primeras rutas de negocio: HU-22** (Task HU-22.2, ver [docs/hu-22-battle-rewards.md](docs/hu-22-battle-rewards.md)). `wallet_accounts` y `wallet_ledger` (migración `001-wallet-accounts`) son las primeras tablas; cualquier otra ruta bajo el prefijo sigue respondiendo `404` desde NestJS hasta que la HU correspondiente la añada.
 
+**Créditos de misión: HU-10** (Task HU-10.3, ver [docs/hu-10-mission-reward-credits.md](docs/hu-10-mission-reward-credits.md)). `POST /api/internal/v1/wallet/credits/mission-reward` (solo `missions`) acredita solo el saldo, con su propio ledger (migración `006`) y sin tocar el progreso de victoria ni los cofres de HU-22.
+
 ## Qué posee este contexto
 
 - Saldo disponible y saldo reservado por jugador.

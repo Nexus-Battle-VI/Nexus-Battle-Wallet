@@ -60,6 +60,17 @@ import {
   CREDIT_BATTLE_REWARD,
   CreditBattleReward,
 } from '../../application/use-cases/CreditBattleReward'
+import {
+  CREDIT_MISSION_REWARD,
+  CreditMissionReward,
+} from '../../application/use-cases/CreditMissionReward'
+import {
+  MISSION_REWARD_REPOSITORY,
+  type MissionRewardRepositoryPort,
+} from '../../application/ports/MissionRewardRepositoryPort'
+import { InMemoryMissionRewardRepository } from '../../adapters/outbound/persistence/InMemoryMissionRewardRepository'
+import { PostgresMissionRewardRepository } from '../../adapters/outbound/persistence/PostgresMissionRewardRepository'
+import { WalletMissionRewardController } from '../../adapters/inbound/http/wallet-mission-reward.controller'
 import { EXPIRE_STAKES, ExpireStakes } from '../../application/use-cases/ExpireStakes'
 import {
   GET_WALLET_SNAPSHOT,
@@ -104,6 +115,7 @@ export const INTERNAL_CALLERS: readonly string[] = ['auction', 'combat', 'missio
     HealthController,
     WalletController,
     WalletInternalController,
+    WalletMissionRewardController,
     WalletStakesInternalController,
     WalletAuctionHoldsController,
     WalletBuyNowTransfersController,
@@ -335,6 +347,24 @@ export const INTERNAL_CALLERS: readonly string[] = ['auction', 'combat', 'missio
         clock: ClockPort,
       ): AuctionPublicationFees => new AuctionPublicationFees(repository, clock),
       inject: [AUCTION_PUBLICATION_FEE_REPOSITORY, CLOCK],
+    },
+    {
+      provide: MISSION_REWARD_REPOSITORY,
+      useFactory: (
+        config: AppConfig,
+        db: Kysely<Database> | null,
+        store: InMemoryWalletStore,
+      ): MissionRewardRepositoryPort =>
+        config.persistenceDriver === PersistenceDriver.Postgres && db !== null
+          ? new PostgresMissionRewardRepository(db)
+          : new InMemoryMissionRewardRepository(store),
+      inject: [APP_CONFIG, DATABASE, IN_MEMORY_WALLET_STORE],
+    },
+    {
+      provide: CREDIT_MISSION_REWARD,
+      useFactory: (rewards: MissionRewardRepositoryPort, clock: ClockPort): CreditMissionReward =>
+        new CreditMissionReward(rewards, clock),
+      inject: [MISSION_REWARD_REPOSITORY, CLOCK],
     },
     {
       provide: CREDIT_BATTLE_REWARD,
