@@ -30,7 +30,16 @@ export type StakeSettlementOutcome = 'CAPTURED' | 'CREDITED'
 
 export interface StakeSettlementEntry {
   readonly playerId: string
-  readonly holdId: string
+  /**
+   * `null` SOLO con `outcome: 'CREDITED'`: un ganador que no aposto nada
+   * propio, pero que de todos modos cobra parte del pozo que el equipo
+   * perdedor SI aposto (pasada de estabilizacion economica -- "cada
+   * participante arriesga UNICAMENTE su propia apuesta", nunca al reves).
+   * Sin hold que referenciar, se acredita directo a `playerId`. `CAPTURED`
+   * siempre necesita un `holdId` real: no se puede capturar un hold que no
+   * existe.
+   */
+  readonly holdId: string | null
   readonly outcome: StakeSettlementOutcome
   readonly amount: number
 }

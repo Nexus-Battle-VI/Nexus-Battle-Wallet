@@ -40,6 +40,20 @@ export class SettlementNotZeroSumError extends Error {
   }
 }
 
+/**
+ * Un `CAPTURED` sin `holdId` (pasada de estabilizacion economica): no se
+ * puede capturar un hold que no existe. Solo un `CREDITED` puede omitirlo
+ * (un ganador sin apuesta propia, acreditado sin referenciar ningun hold).
+ */
+export class CapturedWithoutHoldError extends Error {
+  readonly code = 'CAPTURED_WITHOUT_HOLD'
+
+  constructor(playerId: string) {
+    super(`Una entrada CAPTURED de ${playerId} necesita un holdId real.`)
+    this.name = 'CapturedWithoutHoldError'
+  }
+}
+
 /** Un `CAPTURED` no coincide con el monto original de su hold. */
 export class HoldAmountMismatchError extends Error {
   readonly code = 'HOLD_AMOUNT_MISMATCH'

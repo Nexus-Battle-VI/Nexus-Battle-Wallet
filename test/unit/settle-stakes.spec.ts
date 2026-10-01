@@ -1,4 +1,5 @@
 import {
+  CapturedWithoutHoldError,
   HoldAmountMismatchError,
   HoldNotFoundError,
   SettlementNotZeroSumError,
@@ -150,6 +151,130 @@ describe('SettleStakes', () => {
       reserved: 0,
       available: 100,
     })
+  })
+
+  // Pasada de estabilizacion economica (secciones 7-10 del brief): un
+  // ganador SIN apuesta propia (sin ningun hold reservado) todavia puede
+  // cobrar parte del pozo que el equipo perdedor SI aposto -- "cada
+  // participante arriesga UNICAMENTE su propia apuesta", nunca al reves.
+  // `holdId: null` es la unica forma de representarlo: no hay ningun hold
+  // suyo que Wallet pueda validar o liberar.
+  it('1v1: el GANADOR sin apuesta propia (holdId: null) SI recibe lo que el perdedor aposto', async () => {
+    const { store, wallet, reserve: reserveStake, settle } = setup({ 'sub-1': 100, 'sub-2': 100 })
+
+    // sub-1 (perdedor) aposto; sub-2 (ganador) NO aposto nada.
+    await reserve(reserveStake, 'sub-1', 8)
+
+    const result = await settle.execute(
+      settleInput([
+        { playerId: 'sub-1', holdId: holdIdOf('sub-1'), outcome: 'CAPTURED', amount: 8 },
+        { playerId: 'sub-2', holdId: null, outcome: 'CREDITED', amount: 8 },
+      ]),
+    )
+
+    expect(result.applied).toBe(true)
+    expect(store.stakeHolds.get(holdIdOf('sub-1'))?.status).toBe('CAPTURED')
+    await expect(wallet.getSnapshot('sub-1', '2026-09-21')).resolves.toMatchObject({
+      balance: 92,
+      reserved: 0,
+    })
+    // sub-2 nunca tuvo un hold que liberar: su `reserved` sigue en 0, y su
+    // balance sube EXACTAMENTE lo que sub-1 perdio.
+    await expect(wallet.getSnapshot('sub-2', '2026-09-21')).resolves.toMatchObject({
+      balance: 108,
+      reserved: 0,
+    })
+  })
+
+  it('EL CREADOR apuesta y pierde, el invitado (sin apuesta) gana: identico resultado que al reves -- sin privilegio por identidad', async () => {
+    const { wallet, reserve: reserveStake, settle } = setup({ creador: 100, invitado: 100 })
+
+    await reserve(reserveStake, 'creador', 8)
+
+    await settle.execute(
+      settleInput([
+        { playerId: 'creador', holdId: holdIdOf('creador'), outcome: 'CAPTURED', amount: 8 },
+        { playerId: 'invitado', holdId: null, outcome: 'CREDITED', amount: 8 },
+      ]),
+    )
+
+    await expect(wallet.getSnapshot('creador', '2026-09-21')).resolves.toMatchObject({
+      balance: 92,
+    })
+    await expect(wallet.getSnapshot('invitado', '2026-09-21')).resolves.toMatchObject({
+      balance: 108,
+    })
+  })
+
+  it('2v2 con un ganador sin apuesta propia: el pozo se reparte igual entre TODOS los ganadores', async () => {
+    const {
+      wallet,
+      reserve: reserveStake,
+      settle,
+    } = setup({
+      'sub-1': 100,
+      'sub-2': 100,
+      'sub-3': 100,
+      'sub-4': 100,
+    })
+
+    // Equipo perdedor: sub-1 (10) + sub-2 (10) = pozo 20.
+    // Equipo ganador: sub-3 aposto 4, sub-4 NO aposto nada -- ambos cobran
+    // 10 (20 / 2 ganadores), sin importar quien arriesgo algo propio.
+    await reserve(reserveStake, 'sub-1', 10)
+    await reserve(reserveStake, 'sub-2', 10)
+    await reserve(reserveStake, 'sub-3', 4)
+
+    const result = await settle.execute(
+      settleInput([
+        { playerId: 'sub-1', holdId: holdIdOf('sub-1'), outcome: 'CAPTURED', amount: 10 },
+        { playerId: 'sub-2', holdId: holdIdOf('sub-2'), outcome: 'CAPTURED', amount: 10 },
+        { playerId: 'sub-3', holdId: holdIdOf('sub-3'), outcome: 'CREDITED', amount: 10 },
+        { playerId: 'sub-4', holdId: null, outcome: 'CREDITED', amount: 10 },
+      ]),
+    )
+
+    expect(result.applied).toBe(true)
+    await expect(wallet.getSnapshot('sub-3', '2026-09-21')).resolves.toMatchObject({
+      balance: 110,
+      reserved: 0,
+    })
+    await expect(wallet.getSnapshot('sub-4', '2026-09-21')).resolves.toMatchObject({
+      balance: 110,
+      reserved: 0,
+    })
+  })
+
+  it('reintentar la MISMA liquidacion con un ganador sin apuesta propia es un replay idempotente (no paga dos veces)', async () => {
+    const { wallet, reserve: reserveStake, settle } = setup({ 'sub-1': 100, 'sub-2': 100 })
+
+    await reserve(reserveStake, 'sub-1', 8)
+
+    const input = settleInput([
+      { playerId: 'sub-1', holdId: holdIdOf('sub-1'), outcome: 'CAPTURED', amount: 8 },
+      { playerId: 'sub-2', holdId: null, outcome: 'CREDITED', amount: 8 },
+    ])
+
+    const first = await settle.execute(input)
+    const replay = await settle.execute(input)
+
+    expect(replay).toEqual({ ...first, applied: false })
+    await expect(wallet.getSnapshot('sub-2', '2026-09-21')).resolves.toMatchObject({
+      balance: 108,
+    })
+  })
+
+  it('un CAPTURED sin holdId es invalido: no se puede capturar un hold que no existe (CAPTURED_WITHOUT_HOLD)', async () => {
+    const { settle } = setup({ 'sub-1': 100, 'sub-2': 100 })
+
+    await expect(
+      settle.execute(
+        settleInput([
+          { playerId: 'sub-1', holdId: null, outcome: 'CAPTURED', amount: 8 },
+          { playerId: 'sub-2', holdId: null, outcome: 'CREDITED', amount: 8 },
+        ]),
+      ),
+    ).rejects.toThrow(CapturedWithoutHoldError)
   })
 
   it.each([

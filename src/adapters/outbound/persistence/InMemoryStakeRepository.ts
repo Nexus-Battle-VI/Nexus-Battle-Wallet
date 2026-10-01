@@ -226,6 +226,14 @@ export class InMemoryStakeRepository implements StakeRepositoryPort {
     const holds = new Map<string, InMemoryStakeHold>()
 
     for (const entry of command.settlements) {
+      // Pasada de estabilizacion economica: un `CREDITED` con `holdId: null`
+      // (ganador sin apuesta propia) no referencia ningun hold -- nada que
+      // validar aqui. `assertValidSettlements` ya garantizo que esto nunca
+      // ocurre con `outcome: 'CAPTURED'`.
+      if (entry.holdId === null) {
+        continue
+      }
+
       // Un hold repetido en la misma liquidacion es el caso que en PostgreSQL
       // falla en la segunda pasada (ya no esta ACTIVE); aqui se detecta antes.
       if (seenHolds.has(entry.holdId)) {
@@ -255,6 +263,33 @@ export class InMemoryStakeRepository implements StakeRepositoryPort {
     const results: StakeSettlementResult[] = []
 
     for (const entry of command.settlements) {
+      if (entry.holdId === null) {
+        const account = this.accountOf(entry.playerId, now)
+
+        account.balance += entry.amount
+
+        rows.push({
+          operationId: command.operationId,
+          kind: 'SETTLE_CREDIT',
+          holdOperationId: command.operationId,
+          playerId: entry.playerId,
+          battleId: command.battleId,
+          amount: entry.amount,
+          resultingBalance: account.balance,
+          resultingReserved: account.reserved,
+          createdAt: now,
+        })
+
+        results.push({
+          playerId: entry.playerId,
+          holdId: command.operationId,
+          balance: account.balance,
+          reserved: account.reserved,
+          available: account.balance - account.reserved,
+        })
+        continue
+      }
+
       const hold = holds.get(entry.holdId)
       if (hold === undefined) {
         throw new Error('Estado inconsistente del almacen en memoria: hold validado sin fila.')
@@ -376,7 +411,9 @@ const sameSettlementIntent = (
     command.settlements.map((entry) =>
       keyOf(
         entry.playerId,
-        entry.holdId,
+        // Un `CREDITED` con `holdId: null` se guardo con `command.operationId`
+        // como placeholder (ver `settle()`).
+        entry.holdId ?? command.operationId,
         entry.outcome === 'CAPTURED' ? 'SETTLE_CAPTURE' : 'SETTLE_CREDIT',
         entry.amount,
       ),

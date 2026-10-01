@@ -260,7 +260,7 @@ export class PostgresStakeRepository implements StakeRepositoryPort {
         .execute()
 
       if (existingEntries.length > 0) {
-        if (!sameSettlementIntent(existingEntries, command.settlements)) {
+        if (!sameSettlementIntent(existingEntries, command.settlements, command.operationId)) {
           throw new OperationConflictError(command.operationId)
         }
 
@@ -290,6 +290,52 @@ export class PostgresStakeRepository implements StakeRepositoryPort {
       let creditedTotal = 0
 
       for (const entry of command.settlements) {
+        // Pasada de estabilizacion economica: un `CREDITED` con `holdId:
+        // null` es un ganador SIN apuesta propia que de todos modos cobra
+        // parte del pozo que el rival perdedor SI aposto. No hay ningun
+        // hold suyo que validar ni liberar -- se acredita directo a su
+        // cuenta. `assertValidSettlements` ya garantizo que esto nunca
+        // ocurre con `outcome: 'CAPTURED'`.
+        if (entry.holdId === null) {
+          creditedTotal += entry.amount
+
+          const account = await this.ensureAccount(transaction, entry.playerId, now)
+          const nextBalance = account.balance + entry.amount
+
+          await transaction
+            .updateTable('wallet_accounts')
+            .set({ balance: nextBalance, updated_at: now })
+            .where('player_id', '=', entry.playerId)
+            .execute()
+
+          await transaction
+            .insertInto('wallet_stake_ledger')
+            .values({
+              operation_id: command.operationId,
+              kind: 'SETTLE_CREDIT',
+              // Sin hold propio que referenciar: se usa el operationId de
+              // ESTA liquidacion (`wallet_stake_ledger.hold_operation_id`
+              // no tiene FK hacia `wallet_stake_holds`, es solo trazabilidad).
+              hold_operation_id: command.operationId,
+              player_id: entry.playerId,
+              battle_id: command.battleId,
+              amount: entry.amount,
+              resulting_balance: nextBalance,
+              resulting_reserved: account.reserved,
+              created_at: now,
+            })
+            .execute()
+
+          results.push({
+            playerId: entry.playerId,
+            holdId: command.operationId,
+            balance: nextBalance,
+            reserved: account.reserved,
+            available: nextBalance - account.reserved,
+          })
+          continue
+        }
+
         const hold = await transaction
           .selectFrom('wallet_stake_holds')
           .selectAll()
@@ -504,6 +550,8 @@ export class PostgresStakeRepository implements StakeRepositoryPort {
 const sameSettlementIntent = (
   stored: readonly Selectable<WalletStakeLedgerTable>[],
   settlements: readonly StakeSettlementEntry[],
+  /** Un `CREDITED` con `holdId: null` se guardo con este id como placeholder (ver `settle()`). */
+  settleOperationId: string,
 ): boolean => {
   if (stored.length !== settlements.length) {
     return false
@@ -521,7 +569,7 @@ const sameSettlementIntent = (
     settlements.map((entry) =>
       keyOf(
         entry.playerId,
-        entry.holdId,
+        entry.holdId ?? settleOperationId,
         entry.outcome === 'CAPTURED' ? 'SETTLE_CAPTURE' : 'SETTLE_CREDIT',
         entry.amount,
       ),

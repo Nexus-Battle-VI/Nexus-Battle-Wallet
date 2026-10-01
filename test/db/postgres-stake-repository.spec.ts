@@ -2,6 +2,7 @@ import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testconta
 import { sql, type Kysely } from 'kysely'
 
 import {
+  CapturedWithoutHoldError,
   HoldAmountMismatchError,
   HoldNotFoundError,
   InsufficientAvailableBalanceError,
@@ -293,6 +294,71 @@ describe('PostgresStakeRepository', () => {
     expect(await accountRow('pg-l2')).toMatchObject({ balance: '80', reserved: '0' })
     expect(await accountRow('pg-w1')).toMatchObject({ balance: '115', reserved: '0' })
     expect(await accountRow('pg-w2')).toMatchObject({ balance: '115', reserved: '0' })
+  })
+
+  // Pasada de estabilizacion economica (secciones 7-10 del brief): el
+  // ganador NO reservo ningun hold propio, pero de todos modos cobra el
+  // pozo que el perdedor SI aposto. `holdId: null` no toca
+  // `wallet_stake_holds` en absoluto para esa entrada -- el placeholder de
+  // trazabilidad (`hold_operation_id`) en el ledger es el `operationId` de
+  // ESTA liquidacion, no un hold real (no hay FK que lo exija, ver
+  // migracion 002).
+  it('1v1: el GANADOR sin apuesta propia (holdId: null) cobra el pozo completo del perdedor', async () => {
+    await seedAccount('stake-pg-loser-sh', 100)
+    await seedAccount('stake-pg-winner-sh', 100)
+    await reserve('stake-pg-loser-sh', 8, 'room-sin-hold')
+
+    const result = await stakes.settle({
+      operationId: 'battle:room-sin-hold:stakes:settle',
+      battleId: 'room-sin-hold',
+      settlements: [
+        {
+          playerId: 'stake-pg-loser-sh',
+          holdId: holdIdOf('stake-pg-loser-sh', 'room-sin-hold'),
+          outcome: 'CAPTURED',
+          amount: 8,
+        },
+        { playerId: 'stake-pg-winner-sh', holdId: null, outcome: 'CREDITED', amount: 8 },
+      ],
+    })
+
+    expect(result.applied).toBe(true)
+    expect(await accountRow('stake-pg-loser-sh')).toMatchObject({ balance: '92', reserved: '0' })
+    expect(await accountRow('stake-pg-winner-sh')).toMatchObject({ balance: '108', reserved: '0' })
+
+    // Replay: debe seguir siendo idempotente aunque una entrada no tenga hold.
+    const replay = await stakes.settle({
+      operationId: 'battle:room-sin-hold:stakes:settle',
+      battleId: 'room-sin-hold',
+      settlements: [
+        {
+          playerId: 'stake-pg-loser-sh',
+          holdId: holdIdOf('stake-pg-loser-sh', 'room-sin-hold'),
+          outcome: 'CAPTURED',
+          amount: 8,
+        },
+        { playerId: 'stake-pg-winner-sh', holdId: null, outcome: 'CREDITED', amount: 8 },
+      ],
+    })
+
+    expect(replay.applied).toBe(false)
+    expect(await accountRow('stake-pg-winner-sh')).toMatchObject({ balance: '108', reserved: '0' })
+  })
+
+  it('un CAPTURED sin holdId lanza CapturedWithoutHoldError (no se puede capturar un hold que no existe)', async () => {
+    await seedAccount('pg-captured-sin-hold', 100)
+    await seedAccount('pg-credited-sin-hold', 100)
+
+    await expect(
+      stakes.settle({
+        operationId: 'battle:room-captured-sin-hold:stakes:settle',
+        battleId: 'room-captured-sin-hold',
+        settlements: [
+          { playerId: 'pg-captured-sin-hold', holdId: null, outcome: 'CAPTURED', amount: 8 },
+          { playerId: 'pg-credited-sin-hold', holdId: null, outcome: 'CREDITED', amount: 8 },
+        ],
+      }),
+    ).rejects.toThrow(CapturedWithoutHoldError)
   })
 
   it('suma que no cuadra: 422 y NADA se aplica, ni capturas ni creditos parciales (S-15)', async () => {
