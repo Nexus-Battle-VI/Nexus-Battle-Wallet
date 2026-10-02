@@ -1,6 +1,7 @@
 import type { Kysely, Selectable, Transaction } from 'kysely'
 
 import {
+  CapturedWithoutHoldError,
   HoldAmountMismatchError,
   HoldNotFoundError,
   InsufficientAvailableBalanceError,
@@ -250,6 +251,28 @@ export class PostgresStakeRepository implements StakeRepositoryPort {
 
   settle(command: SettleStakesCommand): Promise<SettleStakesResult> {
     return this.db.transaction().execute(async (transaction) => {
+      // Invariante del adaptador (independiente de `SettleStakes`/
+      // `assertValidSettlements`, que este repositorio puede recibir
+      // llamadas SIN pasar por ese caso de uso -- el test de integracion
+      // contra PostgreSQL real lo hace a proposito, para probar la defensa
+      // del propio adaptador). `CAPTURED` SIEMPRE necesita un hold real que
+      // capturar -- `holdId: null` SOLO es valido con `CREDITED` (un
+      // ganador sin apuesta propia, acreditado directo, sin ningun hold que
+      // referenciar). PRIMERA linea de la transaccion, antes de bloquear o
+      // leer nada: ni `wallet_accounts`, ni `wallet_stake_holds` ni
+      // `wallet_stake_ledger` llegan a tocarse -- la transaccion hace
+      // rollback de inmediato (fail-fast real). Tambien antes de la
+      // deteccion de replay: una forma invalida lo es sin importar si el
+      // `operationId` ya se uso antes o no.
+      //
+      // IMPORTANTE: este `throw` debe vivir DENTRO de este callback async
+      // (nunca antes del `return this.db.transaction()...` de arriba, a
+      // nivel del metodo `settle`) -- de lo contrario escapa como una
+      // excepcion SINCRONA en vez de un rechazo de la Promise que `settle`
+      // declara devolver, rompiendo `.rejects.toThrow(...)` en quien lo
+      // invoca.
+      assertNoCapturedWithoutHold(command.settlements)
+
       await lockByText(transaction, command.operationId)
 
       const existingEntries = await transaction
@@ -294,8 +317,9 @@ export class PostgresStakeRepository implements StakeRepositoryPort {
         // null` es un ganador SIN apuesta propia que de todos modos cobra
         // parte del pozo que el rival perdedor SI aposto. No hay ningun
         // hold suyo que validar ni liberar -- se acredita directo a su
-        // cuenta. `assertValidSettlements` ya garantizo que esto nunca
-        // ocurre con `outcome: 'CAPTURED'`.
+        // cuenta. `assertNoCapturedWithoutHold` (arriba, antes de la
+        // transaccion) ya garantizo que SOLO `CREDITED` llega aqui con
+        // `holdId: null` -- un `CAPTURED` sin hold nunca llega a este punto.
         if (entry.holdId === null) {
           creditedTotal += entry.amount
 
@@ -539,6 +563,24 @@ export class PostgresStakeRepository implements StakeRepositoryPort {
       .executeTakeFirstOrThrow()
 
     return { balance: Number(row.balance), reserved: Number(row.reserved) }
+  }
+}
+
+/**
+ * Invariante de FORMA de una liquidacion, independiente de
+ * `SettleStakes.assertValidSettlements` (este repositorio puede invocarse
+ * directamente, sin pasar por ese caso de uso -- el test de integracion
+ * contra PostgreSQL real lo hace a proposito, para probar la defensa del
+ * propio adaptador). `CAPTURED` SIEMPRE necesita un hold real: no existe un
+ * hold que no existe. Solo `CREDITED` puede omitirlo (ganador sin apuesta
+ * propia). NUNCA al reves: `holdId: null` no "significa" `CREDITED` por si
+ * solo, lo exige la combinacion con `outcome`.
+ */
+const assertNoCapturedWithoutHold = (settlements: readonly StakeSettlementEntry[]): void => {
+  for (const entry of settlements) {
+    if (entry.outcome === 'CAPTURED' && entry.holdId === null) {
+      throw new CapturedWithoutHoldError(entry.playerId)
+    }
   }
 }
 

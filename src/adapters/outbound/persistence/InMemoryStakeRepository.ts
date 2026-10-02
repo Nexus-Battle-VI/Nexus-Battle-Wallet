@@ -1,4 +1,5 @@
 import {
+  CapturedWithoutHoldError,
   HoldAmountMismatchError,
   HoldNotFoundError,
   InsufficientAvailableBalanceError,
@@ -12,6 +13,7 @@ import type {
   SettleStakesResult,
   StakeOperationResult,
   StakeRepositoryPort,
+  StakeSettlementEntry,
   StakeSettlementResult,
 } from '../../../application/ports/StakeRepositoryPort'
 import { weekIdentityOf } from '../../../domain/value-objects/week-identity'
@@ -182,6 +184,13 @@ export class InMemoryStakeRepository implements StakeRepositoryPort {
 
   // eslint-disable-next-line @typescript-eslint/require-await
   async settle(command: SettleStakesCommand): Promise<SettleStakesResult> {
+    // Invariante de FORMA (ver `assertNoCapturedWithoutHold` en
+    // `PostgresStakeRepository.ts`, misma regla, mismo lugar relativo):
+    // independiente de `SettleStakes.assertValidSettlements` -- este doble
+    // tambien puede invocarse directamente -- y ANTES de tocar el store
+    // (sin transaccion real que revierta aqui, hay que fallar primero).
+    assertNoCapturedWithoutHold(command.settlements)
+
     const existingEntries = this.store.stakeLedger.get(command.operationId)
 
     if (existingEntries !== undefined) {
@@ -228,8 +237,8 @@ export class InMemoryStakeRepository implements StakeRepositoryPort {
     for (const entry of command.settlements) {
       // Pasada de estabilizacion economica: un `CREDITED` con `holdId: null`
       // (ganador sin apuesta propia) no referencia ningun hold -- nada que
-      // validar aqui. `assertValidSettlements` ya garantizo que esto nunca
-      // ocurre con `outcome: 'CAPTURED'`.
+      // validar aqui. `assertNoCapturedWithoutHold` (arriba) ya garantizo
+      // que SOLO `CREDITED` llega aqui con `holdId: null`.
       if (entry.holdId === null) {
         continue
       }
@@ -390,6 +399,21 @@ export class InMemoryStakeRepository implements StakeRepositoryPort {
     this.store.accounts.set(playerId, created)
 
     return created
+  }
+}
+
+/**
+ * Invariante de FORMA de una liquidacion, independiente de
+ * `SettleStakes.assertValidSettlements` -- este doble puede invocarse
+ * directamente. `CAPTURED` SIEMPRE necesita un hold real: no existe un hold
+ * que no existe. Solo `CREDITED` puede omitirlo (ganador sin apuesta
+ * propia). Mismo criterio que `PostgresStakeRepository.ts`.
+ */
+const assertNoCapturedWithoutHold = (settlements: readonly StakeSettlementEntry[]): void => {
+  for (const entry of settlements) {
+    if (entry.outcome === 'CAPTURED' && entry.holdId === null) {
+      throw new CapturedWithoutHoldError(entry.playerId)
+    }
   }
 }
 

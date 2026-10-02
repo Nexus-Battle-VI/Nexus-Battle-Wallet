@@ -277,6 +277,37 @@ describe('SettleStakes', () => {
     ).rejects.toThrow(CapturedWithoutHoldError)
   })
 
+  // Cierre del pipeline rojo de PR #24: la prueba de arriba pasa por
+  // `SettleStakes.assertValidSettlements`, que atrapa la forma invalida
+  // ANTES de llegar al repositorio -- nunca prueba la defensa del propio
+  // adaptador. `InMemoryStakeRepository` (como `PostgresStakeRepository`,
+  // ver `test/db/postgres-stake-repository.spec.ts`) puede invocarse
+  // DIRECTO, sin pasar por el caso de uso: por eso necesita su PROPIA
+  // invariante, no solo confiar en que `assertValidSettlements` la cubre.
+  it('InMemoryStakeRepository.settle() invocado DIRECTO (sin SettleStakes): un CAPTURED sin holdId tambien lanza CapturedWithoutHoldError, y no muta nada', async () => {
+    const { stakes, wallet } = setup({ 'sub-1': 100, 'sub-2': 100 })
+
+    await expect(
+      stakes.settle(
+        settleInput([
+          { playerId: 'sub-1', holdId: null, outcome: 'CAPTURED', amount: 8 },
+          { playerId: 'sub-2', holdId: null, outcome: 'CREDITED', amount: 8 },
+        ]),
+      ),
+    ).rejects.toThrow(CapturedWithoutHoldError)
+
+    // Atomicidad: el InMemory no tiene rollback transaccional real -- la
+    // validacion debe ocurrir ANTES de tocar cualquier cuenta.
+    await expect(wallet.getSnapshot('sub-1', '2026-09-21')).resolves.toMatchObject({
+      balance: 100,
+      reserved: 0,
+    })
+    await expect(wallet.getSnapshot('sub-2', '2026-09-21')).resolves.toMatchObject({
+      balance: 100,
+      reserved: 0,
+    })
+  })
+
   it.each([
     ['suma que no cuadra', 10, 8],
     ['solo capturas', 10, 0],
