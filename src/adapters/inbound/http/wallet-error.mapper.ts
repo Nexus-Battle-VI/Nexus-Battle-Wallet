@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common'
 
 import {
+  CapturedWithoutHoldError,
   HoldAmountMismatchError,
   HoldNotFoundError,
   InsufficientAvailableBalanceError,
@@ -108,6 +109,10 @@ export const toWalletHttpException = (error: unknown): HttpException => {
 
   if (error instanceof HoldAmountMismatchError) {
     return new UnprocessableEntityException(body(422, 'HOLD_AMOUNT_MISMATCH', error.message))
+  }
+
+  if (error instanceof CapturedWithoutHoldError) {
+    return new UnprocessableEntityException(body(422, 'CAPTURED_WITHOUT_HOLD', error.message))
   }
 
   if (error instanceof InvalidStakeAmountError) {

@@ -1,4 +1,5 @@
 import {
+  CapturedWithoutHoldError,
   HoldAmountMismatchError,
   HoldNotFoundError,
   InsufficientAvailableBalanceError,
@@ -12,6 +13,7 @@ import type {
   SettleStakesResult,
   StakeOperationResult,
   StakeRepositoryPort,
+  StakeSettlementEntry,
   StakeSettlementResult,
 } from '../../../application/ports/StakeRepositoryPort'
 import { weekIdentityOf } from '../../../domain/value-objects/week-identity'
@@ -182,6 +184,13 @@ export class InMemoryStakeRepository implements StakeRepositoryPort {
 
   // eslint-disable-next-line @typescript-eslint/require-await
   async settle(command: SettleStakesCommand): Promise<SettleStakesResult> {
+    // Invariante de FORMA (ver `assertNoCapturedWithoutHold` en
+    // `PostgresStakeRepository.ts`, misma regla, mismo lugar relativo):
+    // independiente de `SettleStakes.assertValidSettlements` -- este doble
+    // tambien puede invocarse directamente -- y ANTES de tocar el store
+    // (sin transaccion real que revierta aqui, hay que fallar primero).
+    assertNoCapturedWithoutHold(command.settlements)
+
     const existingEntries = this.store.stakeLedger.get(command.operationId)
 
     if (existingEntries !== undefined) {
@@ -226,6 +235,14 @@ export class InMemoryStakeRepository implements StakeRepositoryPort {
     const holds = new Map<string, InMemoryStakeHold>()
 
     for (const entry of command.settlements) {
+      // Pasada de estabilizacion economica: un `CREDITED` con `holdId: null`
+      // (ganador sin apuesta propia) no referencia ningun hold -- nada que
+      // validar aqui. `assertNoCapturedWithoutHold` (arriba) ya garantizo
+      // que SOLO `CREDITED` llega aqui con `holdId: null`.
+      if (entry.holdId === null) {
+        continue
+      }
+
       // Un hold repetido en la misma liquidacion es el caso que en PostgreSQL
       // falla en la segunda pasada (ya no esta ACTIVE); aqui se detecta antes.
       if (seenHolds.has(entry.holdId)) {
@@ -255,6 +272,33 @@ export class InMemoryStakeRepository implements StakeRepositoryPort {
     const results: StakeSettlementResult[] = []
 
     for (const entry of command.settlements) {
+      if (entry.holdId === null) {
+        const account = this.accountOf(entry.playerId, now)
+
+        account.balance += entry.amount
+
+        rows.push({
+          operationId: command.operationId,
+          kind: 'SETTLE_CREDIT',
+          holdOperationId: command.operationId,
+          playerId: entry.playerId,
+          battleId: command.battleId,
+          amount: entry.amount,
+          resultingBalance: account.balance,
+          resultingReserved: account.reserved,
+          createdAt: now,
+        })
+
+        results.push({
+          playerId: entry.playerId,
+          holdId: command.operationId,
+          balance: account.balance,
+          reserved: account.reserved,
+          available: account.balance - account.reserved,
+        })
+        continue
+      }
+
       const hold = holds.get(entry.holdId)
       if (hold === undefined) {
         throw new Error('Estado inconsistente del almacen en memoria: hold validado sin fila.')
@@ -358,6 +402,21 @@ export class InMemoryStakeRepository implements StakeRepositoryPort {
   }
 }
 
+/**
+ * Invariante de FORMA de una liquidacion, independiente de
+ * `SettleStakes.assertValidSettlements` -- este doble puede invocarse
+ * directamente. `CAPTURED` SIEMPRE necesita un hold real: no existe un hold
+ * que no existe. Solo `CREDITED` puede omitirlo (ganador sin apuesta
+ * propia). Mismo criterio que `PostgresStakeRepository.ts`.
+ */
+const assertNoCapturedWithoutHold = (settlements: readonly StakeSettlementEntry[]): void => {
+  for (const entry of settlements) {
+    if (entry.outcome === 'CAPTURED' && entry.holdId === null) {
+      throw new CapturedWithoutHoldError(entry.playerId)
+    }
+  }
+}
+
 const sameSettlementIntent = (
   stored: readonly InMemoryStakeLedgerEntry[],
   command: SettleStakesCommand,
@@ -376,7 +435,9 @@ const sameSettlementIntent = (
     command.settlements.map((entry) =>
       keyOf(
         entry.playerId,
-        entry.holdId,
+        // Un `CREDITED` con `holdId: null` se guardo con `command.operationId`
+        // como placeholder (ver `settle()`).
+        entry.holdId ?? command.operationId,
         entry.outcome === 'CAPTURED' ? 'SETTLE_CAPTURE' : 'SETTLE_CREDIT',
         entry.amount,
       ),

@@ -5,6 +5,7 @@ import {
   IsDateString,
   IsIn,
   IsNumber,
+  IsOptional,
   IsString,
   MaxLength,
   MinLength,
@@ -94,11 +95,18 @@ export class SettleStakeEntryDto {
   @MaxLength(200)
   playerId!: string
 
-  @ApiProperty({ example: 'battle:room-1:player:sub-1:stake:reserve' })
+  /**
+   * `null` SOLO con `outcome: 'CREDITED'` (pasada de estabilizacion
+   * economica): un ganador sin apuesta propia que de todos modos cobra
+   * parte del pozo perdido por el rival. `CAPTURED` sigue exigiendo un
+   * `holdId` real -- lo valida `assertValidSettlements`, no esta anotacion.
+   */
+  @ApiProperty({ example: 'battle:room-1:player:sub-1:stake:reserve', nullable: true })
+  @IsOptional()
   @IsString()
   @MinLength(1)
   @MaxLength(200)
-  holdId!: string
+  holdId!: string | null
 
   @ApiProperty({ enum: ['CAPTURED', 'CREDITED'] })
   @IsIn(['CAPTURED', 'CREDITED'])

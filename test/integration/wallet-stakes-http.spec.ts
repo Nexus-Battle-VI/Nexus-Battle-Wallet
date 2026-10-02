@@ -345,6 +345,73 @@ describe('Wallet stakes HTTP (HU-23)', () => {
       ])
     })
 
+    // Pasada de estabilizacion economica (secciones 7-10 del brief): el
+    // ganador NO aposto nada propio (ningun `reserve` para el), pero de
+    // todos modos cobra el pozo completo que el perdedor SI aposto --
+    // `holdId: null`, de punta a punta (DTO -> caso de uso -> repositorio).
+    it('un GANADOR sin apuesta propia (holdId: null) cobra el pozo completo del perdedor', async () => {
+      seedBalance('sub-loser', 100)
+      seedBalance('sub-winner', 100)
+      await signedPost(
+        reservePath,
+        reserveBody({
+          operationId: holdIdOf('sub-loser', 'room-no-hold'),
+          playerId: 'sub-loser',
+          battleId: 'room-no-hold',
+        }),
+      )
+
+      const response = await signedPost(settlePath, {
+        operationId: 'battle:room-no-hold:stakes:settle',
+        battleId: 'room-no-hold',
+        settlements: [
+          {
+            playerId: 'sub-loser',
+            holdId: holdIdOf('sub-loser', 'room-no-hold'),
+            outcome: 'CAPTURED',
+            amount: 10,
+          },
+          { playerId: 'sub-winner', holdId: null, outcome: 'CREDITED', amount: 10 },
+        ],
+      })
+
+      expect(response.status).toBe(200)
+      expect(response.body).toMatchObject({ applied: true })
+      expect(response.body.results).toEqual([
+        {
+          playerId: 'sub-loser',
+          holdId: holdIdOf('sub-loser', 'room-no-hold'),
+          balance: 90,
+          reserved: 0,
+          available: 90,
+        },
+        {
+          playerId: 'sub-winner',
+          holdId: 'battle:room-no-hold:stakes:settle',
+          balance: 110,
+          reserved: 0,
+          available: 110,
+        },
+      ])
+    })
+
+    it('un CAPTURED sin holdId responde 422 CAPTURED_WITHOUT_HOLD', async () => {
+      seedBalance('sub-loser', 100)
+      seedBalance('sub-winner', 100)
+
+      const response = await signedPost(settlePath, {
+        operationId: 'battle:room-captured-sin-hold:stakes:settle',
+        battleId: 'room-captured-sin-hold',
+        settlements: [
+          { playerId: 'sub-loser', holdId: null, outcome: 'CAPTURED', amount: 10 },
+          { playerId: 'sub-winner', holdId: null, outcome: 'CREDITED', amount: 10 },
+        ],
+      })
+
+      expect(response.status).toBe(422)
+      expect(response.body).toMatchObject({ code: 'CAPTURED_WITHOUT_HOLD' })
+    })
+
     it('suma que no cuadra responde 422 SETTLEMENT_NOT_ZERO_SUM (S-15)', async () => {
       await seedTwoPlayers('room-nz')
 
