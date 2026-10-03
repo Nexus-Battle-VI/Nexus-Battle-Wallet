@@ -2,6 +2,7 @@ import type { Kysely, Transaction } from 'kysely'
 import {
   AuctionPublicationFeeInsufficientBalanceError,
   AuctionPublicationFeeNotFoundError,
+  AuctionPublicationFeeRefundExceedsChargeError,
 } from '../../../application/errors/AuctionPublicationFeeError'
 import { OperationConflictError } from '../../../application/errors/WalletPersistenceError'
 import type {
@@ -63,12 +64,6 @@ export class PostgresAuctionPublicationFeeRepository implements AuctionPublicati
   refund(c: RefundAuctionPublicationFee): Promise<AuctionPublicationFeeResult> {
     return this.db.transaction().execute(async (tx) => {
       await lockByText(tx, c.operationId)
-      const reused = await tx
-        .selectFrom('wallet_auction_publication_fee_refunds')
-        .selectAll()
-        .where('operation_id', '=', c.operationId)
-        .executeTakeFirst()
-      if (reused && reused.charge_id !== c.chargeId) throw new OperationConflictError(c.operationId)
       const fee = await tx
         .selectFrom('wallet_auction_publication_fees')
         .selectAll()
@@ -76,17 +71,54 @@ export class PostgresAuctionPublicationFeeRepository implements AuctionPublicati
         .forUpdate()
         .executeTakeFirst()
       if (!fee) throw new AuctionPublicationFeeNotFoundError(c.chargeId)
-      if (reused) return this.result(c.operationId, fee, false)
+      const chargedAmount = Number(fee.amount)
+      // Sin `amount`: refund total, igual que antes de HU-90 (el unico
+      // llamador actual -Auction- nunca lo envia).
+      const requestedAmount = c.amount ?? chargedAmount
+      if (requestedAmount <= 0 || requestedAmount > chargedAmount)
+        throw new AuctionPublicationFeeRefundExceedsChargeError(c.chargeId)
+      const reused = await tx
+        .selectFrom('wallet_auction_publication_fee_refunds')
+        .selectAll()
+        .where('operation_id', '=', c.operationId)
+        .executeTakeFirst()
+      if (reused && (reused.charge_id !== c.chargeId || Number(reused.amount) !== requestedAmount))
+        throw new OperationConflictError(c.operationId)
+      if (reused)
+        return {
+          operationId: c.operationId,
+          chargeId: fee.charge_id,
+          sellerId: fee.seller_id,
+          amount: requestedAmount,
+          status: fee.status,
+          applied: false,
+        }
       await tx
         .insertInto('wallet_auction_publication_fee_refunds')
-        .values({ operation_id: c.operationId, charge_id: c.chargeId, created_at: c.now })
+        .values({
+          operation_id: c.operationId,
+          charge_id: c.chargeId,
+          amount: requestedAmount,
+          created_at: c.now,
+        })
         .execute()
-      if (fee.status === 'REFUNDED') return this.result(c.operationId, fee, false)
+      if (fee.status === 'REFUNDED')
+        // Otro operationId ya reembolso esta comision antes: no se vuelve a
+        // acreditar (el invariante es un solo refund aplicado por charge),
+        // pero queda registrada la solicitud para auditoria.
+        return {
+          operationId: c.operationId,
+          chargeId: fee.charge_id,
+          sellerId: fee.seller_id,
+          amount: requestedAmount,
+          status: 'REFUNDED',
+          applied: false,
+        }
       await lockByText(tx, fee.seller_id)
       const a = await this.account(tx, fee.seller_id, c.now)
       await tx
         .updateTable('wallet_accounts')
-        .set({ balance: a.balance + Number(fee.amount), updated_at: c.now })
+        .set({ balance: a.balance + requestedAmount, updated_at: c.now })
         .where('player_id', '=', fee.seller_id)
         .execute()
       await tx
@@ -98,7 +130,7 @@ export class PostgresAuctionPublicationFeeRepository implements AuctionPublicati
         operationId: c.operationId,
         chargeId: fee.charge_id,
         sellerId: fee.seller_id,
-        amount: Number(fee.amount),
+        amount: requestedAmount,
         status: 'REFUNDED',
         applied: true,
       }

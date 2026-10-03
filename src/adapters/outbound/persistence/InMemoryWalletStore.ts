@@ -105,7 +105,7 @@ export class InMemoryWalletStore {
     string,
     { intent: string; result: AuctionPublicationFeeResult }
   >()
-  readonly publicationFeeRefunds = new Map<string, string>()
+  readonly publicationFeeRefunds = new Map<string, { chargeId: string; amount: number }>()
   /** Creditos de mision (HU-10.3): `intent` para comparar el replay y el saldo resultante. */
   readonly missionRewardCredits = new Map<string, { intent: string; balance: number }>()
 }

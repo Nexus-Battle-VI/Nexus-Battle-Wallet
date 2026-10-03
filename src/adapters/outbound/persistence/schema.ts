@@ -90,6 +90,7 @@ export interface WalletAuctionPublicationFeesTable {
 export interface WalletAuctionPublicationFeeRefundsTable {
   readonly operation_id: string
   readonly charge_id: string
+  readonly amount: ColumnType<string, string | number, never>
   readonly created_at: ColumnType<Date, Date | string, Date | string>
 }
 

@@ -39,7 +39,9 @@ import { InvalidStakeAmountError } from '../../../domain/value-objects/stake-amo
 import {
   AuctionPublicationFeeInsufficientBalanceError,
   AuctionPublicationFeeNotFoundError,
+  AuctionPublicationFeeRefundExceedsChargeError,
   InvalidAuctionPublicationFeeAmountError,
+  InvalidAuctionPublicationFeeRefundAmountError,
 } from '../../../application/errors/AuctionPublicationFeeError'
 
 const body = (statusCode: number, code: string, message: string): Record<string, unknown> => ({
@@ -65,7 +67,9 @@ export const toWalletHttpException = (error: unknown): HttpException => {
     return new NotFoundException(body(404, 'PUBLICATION_FEE_NOT_FOUND', error.message))
   if (
     error instanceof AuctionPublicationFeeInsufficientBalanceError ||
-    error instanceof InvalidAuctionPublicationFeeAmountError
+    error instanceof InvalidAuctionPublicationFeeAmountError ||
+    error instanceof InvalidAuctionPublicationFeeRefundAmountError ||
+    error instanceof AuctionPublicationFeeRefundExceedsChargeError
   )
     return new UnprocessableEntityException(body(422, 'PUBLICATION_FEE_INVALID', error.message))
   if (error instanceof AuctionHoldNotFoundError)
