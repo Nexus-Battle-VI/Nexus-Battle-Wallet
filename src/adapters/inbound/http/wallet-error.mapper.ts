@@ -15,6 +15,7 @@ import {
   SettlementNotZeroSumError,
 } from '../../../application/errors/StakePersistenceError'
 import {
+  AuctionHoldAlreadyCapturedError,
   AuctionHoldDateTooFarError,
   AuctionHoldInsufficientBalanceError,
   AuctionHoldNotFoundError,
@@ -74,6 +75,13 @@ export const toWalletHttpException = (error: unknown): HttpException => {
     return new UnprocessableEntityException(body(422, 'PUBLICATION_FEE_INVALID', error.message))
   if (error instanceof AuctionHoldNotFoundError)
     return new NotFoundException(body(404, 'HOLD_NOT_FOUND', error.message))
+  // Codigo propio, no AUCTION_HOLD_INVALID: el consumidor debe poder
+  // distinguir "ya capturado" (los creditos no volvieron) de cualquier otro
+  // rechazo, sin interpretar el mensaje.
+  if (error instanceof AuctionHoldAlreadyCapturedError)
+    return new UnprocessableEntityException(
+      body(422, 'AUCTION_HOLD_ALREADY_CAPTURED', error.message),
+    )
   if (
     error instanceof AuctionHoldInsufficientBalanceError ||
     error instanceof AuctionHoldStateError ||

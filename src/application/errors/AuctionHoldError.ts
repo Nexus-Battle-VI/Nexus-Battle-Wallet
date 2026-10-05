@@ -13,6 +13,17 @@ export class AuctionHoldStateError extends Error {
     super('El hold de subasta no esta ACTIVE.')
   }
 }
+/**
+ * Se pidio liberar un hold cuyos creditos ya se capturaron hacia el vendedor.
+ * Distinto de `AuctionHoldStateError` a proposito: quien libera necesita saber
+ * que esos creditos NO volvieron al postor, a diferencia de un hold ya
+ * liberado o expirado, cuyo release es un no-op exitoso.
+ */
+export class AuctionHoldAlreadyCapturedError extends Error {
+  constructor(readonly holdId: string) {
+    super(`El hold de subasta ${holdId} ya fue capturado y no puede liberarse.`)
+  }
+}
 export class AuctionHoldReferenceError extends Error {
   constructor() {
     super('La referencia de Auction no coincide con el hold.')
