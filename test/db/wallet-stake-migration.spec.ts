@@ -1,4 +1,4 @@
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql'
+import { startTestPostgres } from '../support/postgres'
 import { sql, type Kysely } from 'kysely'
 
 import { up, down } from '../../src/adapters/outbound/persistence/migrations/002-wallet-stakes'
@@ -12,12 +12,12 @@ import { createDatabase, migrateToLatest } from '../../src/infrastructure/persis
  * rastro.
  */
 describe('Migracion 002-wallet-stakes', () => {
-  let container: StartedPostgreSqlContainer
+  let container: Awaited<ReturnType<typeof startTestPostgres>>
   let db: Kysely<Database>
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer('postgres:17-alpine').start()
-    db = createDatabase({ connectionString: container.getConnectionUri() })
+    container = await startTestPostgres()
+    db = createDatabase({ connectionString: container.connectionString })
     const outcome = await migrateToLatest(db)
     if (outcome.error !== undefined) {
       throw outcome.error instanceof Error ? outcome.error : new Error('La migracion fallo.')

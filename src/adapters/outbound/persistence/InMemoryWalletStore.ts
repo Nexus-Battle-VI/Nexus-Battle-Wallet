@@ -1,6 +1,7 @@
 import type { CreditBattleRewardResult } from '../../../application/ports/WalletRepositoryPort'
 import type { StakeHoldStatus } from '../../../domain/value-objects/stake-hold'
 import type { StakeLedgerKind } from './schema'
+import type { TournamentEntryFeeResult } from '../../../application/ports/TournamentEntryFeeRepositoryPort'
 import type {
   AuctionHoldStatus,
   AuctionHoldResult,
@@ -65,6 +66,24 @@ export interface InMemoryStakeLedgerEntry {
 }
 
 export class InMemoryWalletStore {
+  readonly entryFees = new Map<
+    string,
+    Omit<TournamentEntryFeeResult, 'status'> & { status: TournamentEntryFeeResult['status'] }
+  >()
+  readonly entryFeeOperations = new Map<
+    string,
+    { intent: string; result: TournamentEntryFeeResult }
+  >()
+  readonly entryFeeRefunds = new Map<string, string>()
+  readonly entryFeeLedger = new Map<
+    string,
+    {
+      chargeId: string
+      kind: 'CHARGE' | 'REFUND'
+      amount: number
+      resultingBalance: number
+    }
+  >()
   readonly accounts = new Map<string, InMemoryAccountState>()
   readonly rewardLedger = new Map<string, InMemoryRewardLedgerEntry>()
   readonly stakeHolds = new Map<string, InMemoryStakeHold>()

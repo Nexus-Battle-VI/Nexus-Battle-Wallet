@@ -21,6 +21,8 @@ Desde el 2026-09-16 corre en producción en el nodo `app` y Caddy le envía `htt
 
 **Créditos de misión: HU-10** (Task HU-10.3, ver [docs/hu-10-mission-reward-credits.md](docs/hu-10-mission-reward-credits.md)). `POST /api/internal/v1/wallet/credits/mission-reward` (solo `missions`) acredita solo el saldo, con su propio ledger (migración `006`) y sin tocar el progreso de victoria ni los cofres de HU-22.
 
+**Créditos de inscripción: parte Wallet de HU-84** (ver [docs/hu-84-entry-fees.md](docs/hu-84-entry-fees.md)). Cobro y compensación internos exclusivos de `tournament`, durables e idempotentes; migración aditiva `008` sobre la `007` publicada de devoluciones parciales. Consumo en Tournament/Web y aceptación integrada pendientes.
+
 ## Qué posee este contexto
 
 - Saldo disponible y saldo reservado por jugador.
@@ -41,10 +43,11 @@ Ningún otro servicio accede a este almacén, ni directamente ni con claves for�
 | HU-23 | [Apuesta de créditos en batalla](https://github.com/Nexus-Battle-VI/Nexus-Battle-Management/issues/70)            |
 | HU-22 | [Cofre por acumulación de créditos](https://github.com/Nexus-Battle-VI/Nexus-Battle-Management/issues/69)         |
 | HU-10 | [Recompensas en créditos por misión](https://github.com/Nexus-Battle-VI/Nexus-Battle-Management/issues/19)        |
+| HU-84 | [Créditos de inscripción al torneo](https://github.com/Nexus-Battle-VI/Nexus-Battle-Management/issues/468)        |
 
 ## Integraciones previstas
 
-- **Entrada interna** (`/api/internal/v1/wallet/...`, HMAC): Auction, Combat y Missions reservan, capturan, liberan y acreditan.
+- **Entrada interna** (`/api/internal/v1/wallet/...`, HMAC): Auction, Combat y Missions reservan, capturan, liberan y acreditan. Tournament solo puede cobrar/compensar inscripción en sus rutas propias.
 - **Entrada pública** prevista: consulta del propio saldo con el `sub` del testimonio.
 - **Salida:** ninguna. Wallet no llama a otros servicios.
 
@@ -77,6 +80,8 @@ npm run build
 ```
 
 Cobertura mínima del **80 %** en ambas suites; por debajo, el comando falla.
+
+Para PostgreSQL local, `TEST_DATABASE_URL` identifica una conexión administrativa de pruebas con permiso para crear bases. Cada suite crea y elimina una base independiente; no modifica las tablas de esa base administrativa. Sin la variable se conserva PostgreSQL 17 con Testcontainers en CI.
 
 ## Configuración
 
