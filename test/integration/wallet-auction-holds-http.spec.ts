@@ -128,4 +128,203 @@ describe('Wallet Auction holds HTTP (HU-65)', () => {
       ).status,
     ).toBe(401)
   })
+
+  /**
+   * HU-90 (CA-05): contrato HTTP del release al cancelar una subasta. Auction
+   * decide por el codigo HTTP y el `code` del cuerpo, nunca por el mensaje.
+   */
+  describe('release por cancelacion de subasta (HU-90, CA-05)', () => {
+    const releases = (holdId: string) => `/api/internal/v1/wallet/holds/${holdId}/releases`
+    const fund = (playerId: string, balance = 100) => {
+      store().accounts.set(playerId, {
+        balance,
+        reserved: 0,
+        victoryProgress: 0,
+        weeklyChestCount: 0,
+        weekIdentity: '2026-09-21',
+      })
+    }
+    const hold = async (holdId: string, playerId: string) => {
+      fund(playerId)
+      const created = await post('/api/internal/v1/wallet/holds', {
+        ...reserve(holdId),
+        playerId,
+        auctionId: `auction-${holdId}`,
+        bidId: `bid-${holdId}`,
+      })
+      expect(created.status).toBe(200)
+    }
+
+    it('ACTIVE + AUCTION_CANCELLED libera con applied=true y deja reserved en cero', async () => {
+      await hold('cancel-active', 'cancel-active-buyer')
+      expect(store().accounts.get('cancel-active-buyer')).toMatchObject({ reserved: 30 })
+
+      const released = await post(releases('cancel-active'), {
+        operationId: 'cancel-active-release',
+        reason: 'AUCTION_CANCELLED',
+      })
+
+      expect(released.status).toBe(200)
+      expect(released.body).toEqual({
+        operationId: 'cancel-active-release',
+        holdId: 'cancel-active',
+        holdStatus: 'RELEASED',
+        applied: true,
+      })
+      expect(store().accounts.get('cancel-active-buyer')).toMatchObject({
+        balance: 100,
+        reserved: 0,
+      })
+    })
+
+    it('el replay del mismo operationId responde 200 con applied=false sin liberar dos veces', async () => {
+      await hold('cancel-replay', 'cancel-replay-buyer')
+      const body = { operationId: 'cancel-replay-release', reason: 'AUCTION_CANCELLED' }
+      await post(releases('cancel-replay'), body)
+
+      const replay = await post(releases('cancel-replay'), body)
+
+      expect(replay.status).toBe(200)
+      expect(replay.body).toMatchObject({ holdStatus: 'RELEASED', applied: false })
+      expect(store().accounts.get('cancel-replay-buyer')).toMatchObject({
+        balance: 100,
+        reserved: 0,
+      })
+    })
+
+    it('un hold ya RELEASED por otra operacion responde 200 no-op', async () => {
+      await hold('cancel-released', 'cancel-released-buyer')
+      await post(releases('cancel-released'), {
+        operationId: 'outbid-first',
+        reason: 'AUCTION_OUTBID',
+      })
+
+      const again = await post(releases('cancel-released'), {
+        operationId: 'cancel-after-outbid',
+        reason: 'AUCTION_CANCELLED',
+      })
+
+      expect(again.status).toBe(200)
+      expect(again.body).toEqual({
+        operationId: 'cancel-after-outbid',
+        holdId: 'cancel-released',
+        holdStatus: 'RELEASED',
+        applied: false,
+      })
+      expect(store().accounts.get('cancel-released-buyer')).toMatchObject({
+        balance: 100,
+        reserved: 0,
+      })
+    })
+
+    it('un hold EXPIRED responde 200 no-op con su estado real', async () => {
+      await hold('cancel-expired', 'cancel-expired-buyer')
+      const stored = store().auctionHolds.get('cancel-expired')
+      if (stored === undefined) throw new Error('El hold de prueba no existe.')
+      // Mismo efecto que el job de expiracion: baja reserved y marca EXPIRED.
+      stored.status = 'EXPIRED'
+      const account = store().accounts.get('cancel-expired-buyer')
+      if (account === undefined) throw new Error('La cuenta de prueba no existe.')
+      account.reserved -= stored.amount
+
+      const released = await post(releases('cancel-expired'), {
+        operationId: 'cancel-expired-release',
+        reason: 'AUCTION_CANCELLED',
+      })
+
+      expect(released.status).toBe(200)
+      expect(released.body).toEqual({
+        operationId: 'cancel-expired-release',
+        holdId: 'cancel-expired',
+        holdStatus: 'EXPIRED',
+        applied: false,
+      })
+      expect(store().accounts.get('cancel-expired-buyer')).toMatchObject({
+        balance: 100,
+        reserved: 0,
+      })
+    })
+
+    it('un hold CAPTURED responde 422 AUCTION_HOLD_ALREADY_CAPTURED, nunca 200', async () => {
+      await hold('cancel-captured', 'cancel-captured-buyer')
+      fund('cancel-captured-seller', 0)
+      const captured = await post('/api/internal/v1/wallet/holds/cancel-captured/captures', {
+        operationId: 'cancel-captured-capture',
+        beneficiaryPlayerId: 'cancel-captured-seller',
+        auctionId: 'auction-cancel-captured',
+        winningBidId: 'bid-cancel-captured',
+      })
+      expect(captured.status).toBe(200)
+
+      const released = await post(releases('cancel-captured'), {
+        operationId: 'cancel-captured-release',
+        reason: 'AUCTION_CANCELLED',
+      })
+
+      expect(released.status).toBe(422)
+      expect(released.body).toMatchObject({
+        statusCode: 422,
+        code: 'AUCTION_HOLD_ALREADY_CAPTURED',
+      })
+      expect(released.body.applied).toBeUndefined()
+      expect(store().accounts.get('cancel-captured-buyer')).toMatchObject({
+        balance: 70,
+        reserved: 0,
+      })
+      expect(store().accounts.get('cancel-captured-seller')).toMatchObject({ balance: 30 })
+    })
+
+    it('un hold inexistente responde 404 HOLD_NOT_FOUND', async () => {
+      const released = await post(releases('cancel-missing'), {
+        operationId: 'cancel-missing-release',
+        reason: 'AUCTION_CANCELLED',
+      })
+
+      expect(released.status).toBe(404)
+      expect(released.body).toMatchObject({ code: 'HOLD_NOT_FOUND' })
+    })
+
+    it('el mismo operationId con otro reason responde 409 OPERATION_CONFLICT', async () => {
+      await hold('cancel-conflict', 'cancel-conflict-buyer')
+      const first = await post(releases('cancel-conflict'), {
+        operationId: 'cancel-conflict-release',
+        reason: 'AUCTION_SETTLEMENT_LOST',
+      })
+      expect(first.status).toBe(200)
+
+      const conflict = await post(releases('cancel-conflict'), {
+        operationId: 'cancel-conflict-release',
+        reason: 'AUCTION_CANCELLED',
+      })
+
+      expect(conflict.status).toBe(409)
+      expect(conflict.body).toMatchObject({ code: 'OPERATION_CONFLICT' })
+    })
+
+    it.each(['AUCTION_OUTBID', 'AUCTION_SETTLEMENT_LOST'])(
+      'el motivo existente %s sigue liberando un hold ACTIVE',
+      async (reason) => {
+        const holdId = `legacy-${reason.toLowerCase()}`
+        await hold(holdId, `${holdId}-buyer`)
+
+        const released = await post(releases(holdId), { operationId: `${holdId}-release`, reason })
+
+        expect(released.status).toBe(200)
+        expect(released.body).toMatchObject({ holdStatus: 'RELEASED', applied: true })
+        expect(store().accounts.get(`${holdId}-buyer`)).toMatchObject({ balance: 100, reserved: 0 })
+      },
+    )
+
+    it('rechaza con 400 un reason fuera del contrato', async () => {
+      await hold('cancel-bad-reason', 'cancel-bad-reason-buyer')
+
+      const released = await post(releases('cancel-bad-reason'), {
+        operationId: 'cancel-bad-reason-release',
+        reason: 'AUCTION_WHATEVER',
+      })
+
+      expect(released.status).toBe(400)
+      expect(store().accounts.get('cancel-bad-reason-buyer')).toMatchObject({ reserved: 30 })
+    })
+  })
 })

@@ -1,5 +1,6 @@
 import type { Kysely, Transaction } from 'kysely'
 import {
+  AuctionHoldAlreadyCapturedError,
   AuctionHoldInsufficientBalanceError,
   AuctionHoldNotFoundError,
   AuctionHoldReferenceError,
@@ -168,7 +169,20 @@ export class PostgresAuctionHoldRepository implements AuctionHoldRepositoryPort 
         .forUpdate()
         .executeTakeFirst()
       if (!hold) throw new AuctionHoldNotFoundError(command.holdId)
-      if (hold.status !== 'ACTIVE') throw new AuctionHoldStateError()
+      if (hold.status === 'CAPTURED') throw new AuctionHoldAlreadyCapturedError(hold.id)
+      if (hold.status === 'RELEASED' || hold.status === 'EXPIRED') {
+        // Los creditos ya no estan retenidos: no-op sin saldo ni ledger. La
+        // operacion si se registra, para que su replay y un conflicto de
+        // intent se comporten igual que los de un release aplicado.
+        const noop = {
+          operationId: command.operationId,
+          holdId: hold.id,
+          holdStatus: hold.status,
+          applied: false,
+        }
+        await this.persist(tx, command.operationId, intent, noop, command.now)
+        return noop
+      }
       await lockByText(tx, hold.player_id)
       const account = await this.account(tx, hold.player_id, command.now),
         reserved = account.reserved - Number(hold.amount)

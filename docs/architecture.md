@@ -40,7 +40,11 @@ Todas las llamadas salientes que mueven créditos o productos siguen el patrón 
 
 - `POST /api/internal/v1/wallet/holds` — reservar `{operationId, playerId, amount, reason, reference, expiresAt}`.
 - `POST /api/internal/v1/wallet/holds/{holdId}/captures` — capturar hacia un beneficiario o una cuenta de sistema.
-- `POST /api/internal/v1/wallet/holds/{holdId}/releases` — liberar.
+- `POST /api/internal/v1/wallet/holds/{holdId}/releases` — liberar `{operationId, reason}`, con `reason` en `AUCTION_OUTBID` | `AUCTION_SETTLEMENT_LOST` | `AUCTION_CANCELLED`. Es idempotente por `operationId` (mismo intent: replay con `applied: false`; otro intent: `409 OPERATION_CONFLICT`) y por estado del hold:
+  - `ACTIVE` → `200`, `holdStatus: RELEASED`, `applied: true`.
+  - `RELEASED` o `EXPIRED` → `200`, `applied: false` y el `holdStatus` real; no mueve saldo ni escribe ledger.
+  - `CAPTURED` → `422 AUCTION_HOLD_ALREADY_CAPTURED`: los créditos ya se transfirieron y no vuelven al postor.
+  - inexistente → `404 HOLD_NOT_FOUND`.
 - `POST /api/internal/v1/wallet/credits` — acreditar recompensas.
 - `GET /api/v1/wallet/me` — saldo propio.
 

@@ -1,4 +1,5 @@
 import {
+  AuctionHoldAlreadyCapturedError,
   AuctionHoldInsufficientBalanceError,
   AuctionHoldNotFoundError,
   AuctionHoldReferenceError,
@@ -90,7 +91,18 @@ export class InMemoryAuctionHoldRepository implements AuctionHoldRepositoryPort 
     if (replay) return replay
     const hold = this.store.auctionHolds.get(command.holdId)
     if (!hold) throw new AuctionHoldNotFoundError(command.holdId)
-    if (hold.status !== 'ACTIVE') throw new AuctionHoldStateError()
+    if (hold.status === 'CAPTURED') throw new AuctionHoldAlreadyCapturedError(hold.id)
+    if (hold.status === 'RELEASED' || hold.status === 'EXPIRED') {
+      // Ver `PostgresAuctionHoldRepository.release`: no-op registrado.
+      const noop = {
+        operationId: command.operationId,
+        holdId: hold.id,
+        holdStatus: hold.status,
+        applied: false,
+      }
+      this.store.auctionOperations.set(command.operationId, { intent, result: noop })
+      return noop
+    }
     const account = this.account(hold.playerId, command.now)
     account.reserved -= hold.amount
     hold.status = 'RELEASED'

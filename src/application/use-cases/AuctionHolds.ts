@@ -1,5 +1,6 @@
 import type { ClockPort } from '../ports/ClockPort'
 import type {
+  AuctionHoldReleaseReason,
   AuctionHoldRepositoryPort,
   AuctionHoldResult,
 } from '../ports/AuctionHoldRepositoryPort'
@@ -49,11 +50,7 @@ export class AuctionHolds {
   }) {
     return this.repository.capture({ ...input, now: this.clock.now() })
   }
-  release(input: {
-    operationId: string
-    holdId: string
-    reason: 'AUCTION_OUTBID' | 'AUCTION_SETTLEMENT_LOST'
-  }) {
+  release(input: { operationId: string; holdId: string; reason: AuctionHoldReleaseReason }) {
     return this.repository.release({ ...input, now: this.clock.now() })
   }
 }
