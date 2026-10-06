@@ -116,3 +116,13 @@ Ver [.env.example](.env.example). Las reglas que hacen fallar el arranque son de
 ## Licencia
 
 Licensing pending project governance.
+
+## Premio de torneo HU-86
+
+`POST /api/internal/v1/wallet/credits/tournament-prize` recibe un derecho CREDITS
+firmado exclusivamente por Tournament. PostgreSQL confirma saldo, ledger y recibo
+en una transacción; el replay recupera el mismo UUID. El scope de operationId incluye
+cobros/devoluciones HU-84 y premios, con migración aditiva 009 sobre 008.
+`amount` es texto entero exacto; se conservan los medios créditos existentes.
+La ruta requiere `PERSISTENCE_DRIVER=postgres`; en memoria responde 503.
+Ver [contrato, autoridad, errores, precisión y pruebas](docs/hu-86-tournament-prize.md).

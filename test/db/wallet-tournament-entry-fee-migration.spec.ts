@@ -1,6 +1,7 @@
 import { sql, type Kysely } from 'kysely'
 import { startTestPostgres } from '../support/postgres'
 import { down } from '../../src/adapters/outbound/persistence/migrations/008-wallet-tournament-entry-fees'
+import { down as downPrizes } from '../../src/adapters/outbound/persistence/migrations/009-wallet-tournament-prizes'
 import { PostgresAuctionPublicationFeeRepository } from '../../src/adapters/outbound/persistence/PostgresAuctionPublicationFeeRepository'
 import { PostgresTournamentEntryFeeRepository } from '../../src/adapters/outbound/persistence/PostgresTournamentEntryFeeRepository'
 import type { Database } from '../../src/adapters/outbound/persistence/schema'
@@ -15,6 +16,7 @@ describe('Migración 008 sobre Wallet develop publicado', () => {
   let db: Kysely<Database>
   const now = new Date('2026-10-05T12:00:00Z')
   const through007 = Object.fromEntries(Object.entries(MIGRATIONS).filter(([name]) => name < '008'))
+  const through008 = Object.fromEntries(Object.entries(MIGRATIONS).filter(([name]) => name < '009'))
 
   beforeAll(async () => {
     postgres = await startTestPostgres()
@@ -77,7 +79,7 @@ describe('Migración 008 sobre Wallet develop publicado', () => {
     )
     const saved = await snapshotPublishedTables()
     expect(Object.keys(saved).length).toBeGreaterThanOrEqual(13)
-    const upgrade = await migrateToLatest(db)
+    const upgrade = await migrateToLatest(db, through008)
     expect(upgrade.error).toBeUndefined()
     expect(upgrade.applied).toEqual(['008-wallet-tournament-entry-fees'])
     expect(await snapshotPublishedTables()).toEqual(saved)
@@ -98,8 +100,10 @@ describe('Migración 008 sobre Wallet develop publicado', () => {
 
     await db.destroy()
     db = createDatabase({ connectionString: postgres.connectionString })
-    expect(await migrateToLatest(db)).toEqual({ applied: [], error: undefined })
+    expect(await migrateToLatest(db, through008)).toEqual({ applied: [], error: undefined })
     expect(await snapshotPublishedTables()).toEqual(saved)
+    // La implementación actual comparte scope Tournament desde 009.
+    expect((await migrateToLatest(db)).applied).toEqual(['009-wallet-tournament-prizes'])
     const fees = new PostgresTournamentEntryFeeRepository(db)
     await fees.charge({
       operationId: 'upgrade-entry',
@@ -139,6 +143,7 @@ describe('Migración 008 sobre Wallet develop publicado', () => {
 
   it('down elimina únicamente las tablas nuevas y conserva la 007 con sus datos', async () => {
     const saved = await snapshotPublishedTables()
+    await downPrizes(db as unknown as Kysely<unknown>)
     await down(db as unknown as Kysely<unknown>)
     expect(await snapshotPublishedTables()).toEqual(saved)
     const newTables =

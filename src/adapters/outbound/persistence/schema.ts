@@ -57,6 +57,8 @@ export interface WalletMissionRewardCreditsTable {
 }
 
 export interface Database {
+  readonly wallet_tournament_operation_ids: WalletTournamentOperationIdsTable
+  readonly wallet_tournament_prize_ledger: WalletTournamentPrizeLedgerTable
   readonly wallet_accounts: WalletAccountsTable
   readonly wallet_ledger: WalletLedgerTable
   readonly wallet_mission_reward_credits: WalletMissionRewardCreditsTable
@@ -73,6 +75,29 @@ export interface Database {
   readonly wallet_tournament_entry_fees: WalletTournamentEntryFeesTable
   readonly wallet_tournament_entry_fee_refunds: WalletTournamentEntryFeeRefundsTable
   readonly wallet_tournament_entry_ledger: WalletTournamentEntryLedgerTable
+}
+
+export type TournamentOperationPurpose = 'ENTRY_CHARGE' | 'ENTRY_REFUND' | 'PRIZE_CREDITS'
+export interface WalletTournamentOperationIdsTable {
+  readonly operation_id: string
+  readonly purpose: ColumnType<TournamentOperationPurpose, TournamentOperationPurpose, never>
+  readonly created_at: ColumnType<Date, Date | string, never>
+}
+/** Derecho normalizado, movimiento exacto y recibo inseparables, insert-only. */
+export interface WalletTournamentPrizeLedgerTable {
+  readonly operation_id: string
+  readonly purpose: ColumnType<'PRIZE_CREDITS', 'PRIZE_CREDITS', never>
+  readonly receipt_id: string
+  readonly tournament_id: string
+  readonly champion_team_id: string
+  readonly final_encounter_id: string
+  readonly final_room_id: string
+  readonly player_id: string
+  readonly hero_id: string
+  readonly amount: ColumnType<string, string, never>
+  readonly resulting_balance: ColumnType<string, string, never>
+  readonly resulting_reserved: ColumnType<string, string, never>
+  readonly created_at: ColumnType<Date, Date | string, never>
 }
 export interface WalletAuctionPublicationFeesTable {
   readonly charge_id: string
