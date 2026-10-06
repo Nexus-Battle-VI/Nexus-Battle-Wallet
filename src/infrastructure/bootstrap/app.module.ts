@@ -14,6 +14,17 @@ import { WalletStakesInternalController } from '../../adapters/inbound/http/wall
 import { WalletAuctionHoldsController } from '../../adapters/inbound/http/wallet-auction-holds.controller'
 import { WalletBuyNowTransfersController } from '../../adapters/inbound/http/wallet-buy-now-transfers.controller'
 import { WalletAuctionPublicationFeesController } from '../../adapters/inbound/http/wallet-auction-publication-fees.controller'
+import { WalletTournamentEntryFeesController } from '../../adapters/inbound/http/wallet-tournament-entry-fees.controller'
+import { InMemoryTournamentEntryFeeRepository } from '../../adapters/outbound/persistence/InMemoryTournamentEntryFeeRepository'
+import { PostgresTournamentEntryFeeRepository } from '../../adapters/outbound/persistence/PostgresTournamentEntryFeeRepository'
+import {
+  TOURNAMENT_ENTRY_FEE_REPOSITORY,
+  type TournamentEntryFeeRepositoryPort,
+} from '../../application/ports/TournamentEntryFeeRepositoryPort'
+import {
+  TOURNAMENT_ENTRY_FEES,
+  TournamentEntryFees,
+} from '../../application/use-cases/TournamentEntryFees'
 import { InMemoryAuctionPublicationFeeRepository } from '../../adapters/outbound/persistence/InMemoryAuctionPublicationFeeRepository'
 import { PostgresAuctionPublicationFeeRepository } from '../../adapters/outbound/persistence/PostgresAuctionPublicationFeeRepository'
 import { InMemoryAuctionHoldRepository } from '../../adapters/outbound/persistence/InMemoryAuctionHoldRepository'
@@ -100,7 +111,7 @@ export const STAKE_EXPIRY_SCHEDULER = Symbol('StakeExpiryScheduler')
  * de arquitectura, no un ajuste de configuracion: por eso vive en codigo, donde
  * cambiarla exige un Pull Request revisado.
  */
-export const INTERNAL_CALLERS: readonly string[] = ['auction', 'combat', 'missions']
+export const INTERNAL_CALLERS: readonly string[] = ['auction', 'combat', 'missions', 'tournament']
 
 /**
  * Raiz de composicion.
@@ -120,6 +131,7 @@ export const INTERNAL_CALLERS: readonly string[] = ['auction', 'combat', 'missio
     WalletAuctionHoldsController,
     WalletBuyNowTransfersController,
     WalletAuctionPublicationFeesController,
+    WalletTournamentEntryFeesController,
   ],
   providers: [
     {
@@ -365,6 +377,26 @@ export const INTERNAL_CALLERS: readonly string[] = ['auction', 'combat', 'missio
       useFactory: (rewards: MissionRewardRepositoryPort, clock: ClockPort): CreditMissionReward =>
         new CreditMissionReward(rewards, clock),
       inject: [MISSION_REWARD_REPOSITORY, CLOCK],
+    },
+    {
+      provide: TOURNAMENT_ENTRY_FEE_REPOSITORY,
+      useFactory: (
+        config: AppConfig,
+        db: Kysely<Database> | null,
+        store: InMemoryWalletStore,
+      ): TournamentEntryFeeRepositoryPort =>
+        config.persistenceDriver === PersistenceDriver.Postgres && db !== null
+          ? new PostgresTournamentEntryFeeRepository(db)
+          : new InMemoryTournamentEntryFeeRepository(store),
+      inject: [APP_CONFIG, DATABASE, IN_MEMORY_WALLET_STORE],
+    },
+    {
+      provide: TOURNAMENT_ENTRY_FEES,
+      useFactory: (
+        repository: TournamentEntryFeeRepositoryPort,
+        clock: ClockPort,
+      ): TournamentEntryFees => new TournamentEntryFees(repository, clock),
+      inject: [TOURNAMENT_ENTRY_FEE_REPOSITORY, CLOCK],
     },
     {
       provide: CREDIT_BATTLE_REWARD,

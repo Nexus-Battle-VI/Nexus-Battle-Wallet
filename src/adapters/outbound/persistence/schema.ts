@@ -1,6 +1,7 @@
 import type { ColumnType, Generated } from 'kysely'
 
 import type { StakeHoldStatus } from '../../../domain/value-objects/stake-hold'
+import type { TournamentEntryFeeStatus } from '../../../application/ports/TournamentEntryFeeRepositoryPort'
 
 /**
  * Esquema de la base de datos del servicio, tipado para Kysely.
@@ -69,6 +70,9 @@ export interface Database {
   readonly wallet_buy_now_transfer_ledger: WalletBuyNowTransferLedgerTable
   readonly wallet_auction_publication_fees: WalletAuctionPublicationFeesTable
   readonly wallet_auction_publication_fee_refunds: WalletAuctionPublicationFeeRefundsTable
+  readonly wallet_tournament_entry_fees: WalletTournamentEntryFeesTable
+  readonly wallet_tournament_entry_fee_refunds: WalletTournamentEntryFeeRefundsTable
+  readonly wallet_tournament_entry_ledger: WalletTournamentEntryLedgerTable
 }
 export interface WalletAuctionPublicationFeesTable {
   readonly charge_id: string
@@ -196,4 +200,36 @@ export interface WalletAuctionHoldLedgerTable {
   readonly resulting_balance: ColumnType<string, string | number, string | number>
   readonly resulting_reserved: ColumnType<string, string | number, string | number>
   readonly created_at: ColumnType<Date, Date | string, Date | string>
+}
+
+export interface WalletTournamentEntryFeesTable {
+  readonly charge_id: string
+  readonly operation_id: string
+  readonly tournament_id: string
+  readonly team_id: string
+  readonly payer_id: string
+  readonly amount: ColumnType<string, string | number, never>
+  readonly status: ColumnType<
+    TournamentEntryFeeStatus,
+    TournamentEntryFeeStatus,
+    TournamentEntryFeeStatus
+  >
+  readonly created_at: ColumnType<Date, Date | string, never>
+  readonly refunded_at: ColumnType<Date | null, null, Date>
+}
+
+export interface WalletTournamentEntryFeeRefundsTable {
+  readonly operation_id: string
+  readonly charge_id: string
+  readonly created_at: ColumnType<Date, Date | string, never>
+}
+
+/** Movimientos de inscripción; el saldo numeric conserva los medios créditos de 007. */
+export interface WalletTournamentEntryLedgerTable {
+  readonly operation_id: string
+  readonly charge_id: string
+  readonly kind: ColumnType<'CHARGE' | 'REFUND', 'CHARGE' | 'REFUND', never>
+  readonly amount: ColumnType<string, string | number, never>
+  readonly resulting_balance: ColumnType<string, string | number, never>
+  readonly created_at: ColumnType<Date, Date | string, never>
 }

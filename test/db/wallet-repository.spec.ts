@@ -1,4 +1,4 @@
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql'
+import { startTestPostgres } from '../support/postgres'
 import type { Kysely } from 'kysely'
 
 import { OperationConflictError } from '../../src/application/errors/WalletPersistenceError'
@@ -15,13 +15,13 @@ import { createDatabase, migrateToLatest } from '../../src/infrastructure/persis
  * limite de 2 cofres/semana (`pg_advisory_xact_lock`).
  */
 describe('PostgresWalletRepository', () => {
-  let container: StartedPostgreSqlContainer
+  let container: Awaited<ReturnType<typeof startTestPostgres>>
   let db: Kysely<Database>
   let repository: PostgresWalletRepository
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer('postgres:17-alpine').start()
-    db = createDatabase({ connectionString: container.getConnectionUri() })
+    container = await startTestPostgres()
+    db = createDatabase({ connectionString: container.connectionString })
     const outcome = await migrateToLatest(db)
     if (outcome.error !== undefined) {
       throw outcome.error instanceof Error ? outcome.error : new Error('La migracion fallo.')

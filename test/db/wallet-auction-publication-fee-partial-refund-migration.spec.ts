@@ -1,4 +1,4 @@
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql'
+import { startTestPostgres } from '../support/postgres'
 import { sql, type Kysely } from 'kysely'
 
 import type { Database } from '../../src/adapters/outbound/persistence/schema'
@@ -20,15 +20,15 @@ import {
  * historico con el monto que de verdad se cobro.
  */
 describe('Migracion 007: wallet_accounts/wallet_ledger a numeric + amount de refund', () => {
-  let container: StartedPostgreSqlContainer
+  let container: Awaited<ReturnType<typeof startTestPostgres>>
   let db: Kysely<Database>
   const preMigration007 = Object.fromEntries(
     Object.entries(MIGRATIONS).filter(([name]) => name < '007'),
   )
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer('postgres:17-alpine').start()
-    db = createDatabase({ connectionString: container.getConnectionUri() })
+    container = await startTestPostgres()
+    db = createDatabase({ connectionString: container.connectionString })
   }, 120_000)
 
   afterAll(async () => {
@@ -54,7 +54,10 @@ describe('Migracion 007: wallet_accounts/wallet_ledger a numeric + amount de ref
       db,
     )
 
-    const after = await migrateToLatest(db, MIGRATIONS)
+    const through007 = Object.fromEntries(
+      Object.entries(MIGRATIONS).filter(([name]) => name < '008'),
+    )
+    const after = await migrateToLatest(db, through007)
     expect(after.error).toBeUndefined()
     expect(after.applied).toEqual(['007-wallet-auction-publication-fee-partial-refund'])
 

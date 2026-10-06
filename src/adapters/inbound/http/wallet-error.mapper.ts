@@ -35,6 +35,11 @@ import {
   MissionRewardSchemaError,
 } from '../../../application/errors/MissionRewardError'
 import { OperationConflictError } from '../../../application/errors/WalletPersistenceError'
+import {
+  InvalidTournamentEntryFeeAmountError,
+  TournamentEntryFeeInsufficientBalanceError,
+  TournamentEntryFeeNotFoundError,
+} from '../../../application/errors/TournamentEntryFeeError'
 import { DomainError } from '../../../domain/errors/DomainError'
 import { InvalidStakeAmountError } from '../../../domain/value-objects/stake-amount'
 import {
@@ -53,6 +58,15 @@ const body = (statusCode: number, code: string, message: string): Record<string,
 
 /** Semantica de codigos de HU-59/ADR-019, S3 de HU-22 y §11 de HU-23. */
 export const toWalletHttpException = (error: unknown): HttpException => {
+  if (error instanceof TournamentEntryFeeInsufficientBalanceError) {
+    return new UnprocessableEntityException(body(422, 'INSUFFICIENT_BALANCE', error.message))
+  }
+  if (error instanceof InvalidTournamentEntryFeeAmountError) {
+    return new BadRequestException(body(400, 'SCHEMA_INVALID', error.message))
+  }
+  if (error instanceof TournamentEntryFeeNotFoundError) {
+    return new NotFoundException(body(404, 'CHARGE_NOT_FOUND', error.message))
+  }
   // Credito de mision (HU-10.3): cuerpo fuera del contrato -> 400; importe que
   // incumple una regla -> 422. Cada uno con su `code` del contrato.
   if (error instanceof MissionRewardSchemaError) {

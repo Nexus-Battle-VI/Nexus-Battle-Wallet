@@ -1,4 +1,4 @@
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql'
+import { startTestPostgres } from '../support/postgres'
 import { sql, type Kysely } from 'kysely'
 
 import {
@@ -11,14 +11,14 @@ import type { Database } from '../../src/adapters/outbound/persistence/schema'
 import { createDatabase, migrateToLatest } from '../../src/infrastructure/persistence/database'
 
 describe('PostgresBuyNowTransferRepository', () => {
-  let container: StartedPostgreSqlContainer
+  let container: Awaited<ReturnType<typeof startTestPostgres>>
   let db: Kysely<Database>
   let transfers: PostgresBuyNowTransferRepository
   const now = new Date('2026-09-23T15:00:00.000Z')
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer('postgres:17-alpine').start()
-    db = createDatabase({ connectionString: container.getConnectionUri() })
+    container = await startTestPostgres()
+    db = createDatabase({ connectionString: container.connectionString })
     const outcome = await migrateToLatest(db)
     if (outcome.error !== undefined) {
       throw outcome.error instanceof Error ? outcome.error : new Error('La migracion fallo.')
