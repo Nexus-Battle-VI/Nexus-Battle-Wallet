@@ -121,4 +121,54 @@ describe('Wallet publication fees HTTP (HU-62)', () => {
     const invalid = await call(chargePath, { operationId: '', sellerId: 'x', amount: 0 })
     expect(invalid.status).toBe(400)
   })
+
+  // HU-90 (7.7.10): penalizacion del 50% de la comision de publicacion.
+  it('refunds half of a 1-credit (24h) fee, leaving a .5 balance', async () => {
+    account('http-fee-half-24h', 10)
+    await charge('http-half-24h', 'http-fee-half-24h', 1)
+    expect(store().accounts.get('http-fee-half-24h')).toMatchObject({ balance: 9 })
+    const refund = await call(`${chargePath}/http-half-24h/refunds`, {
+      operationId: 'http-half-24h-refund',
+      amount: 0.5,
+    })
+    expect(refund.status).toBe(200)
+    expect(refund.body).toMatchObject({ status: 'REFUNDED', applied: true, amount: 0.5 })
+    expect(store().accounts.get('http-fee-half-24h')).toMatchObject({ balance: 9.5 })
+  })
+
+  it('refunds half of a 3-credit (48h) fee, leaving a .5 balance', async () => {
+    account('http-fee-half-48h', 10)
+    await charge('http-half-48h', 'http-fee-half-48h', 3)
+    const refund = await call(`${chargePath}/http-half-48h/refunds`, {
+      operationId: 'http-half-48h-refund',
+      amount: 1.5,
+    })
+    expect(refund.status).toBe(200)
+    expect(refund.body).toMatchObject({ status: 'REFUNDED', applied: true, amount: 1.5 })
+    expect(store().accounts.get('http-fee-half-48h')).toMatchObject({ balance: 8.5 })
+  })
+
+  it('rejects a partial refund amount that is not a multiple of 0.5, non-positive, or exceeds the charge', async () => {
+    account('http-fee-half-invalid', 10)
+    await charge('http-half-invalid', 'http-fee-half-invalid', 1)
+    const path = `${chargePath}/http-half-invalid/refunds`
+    expect((await call(path, { operationId: 'r-quarter', amount: 0.25 })).status).toBe(422)
+    expect((await call(path, { operationId: 'r-zero', amount: 0 })).status).toBe(422)
+    expect((await call(path, { operationId: 'r-negative', amount: -0.5 })).status).toBe(422)
+    expect((await call(path, { operationId: 'r-exceeds', amount: 1.5 })).status).toBe(422)
+    expect(store().accounts.get('http-fee-half-invalid')).toMatchObject({ balance: 9 })
+  })
+
+  it('replays a partial refund idempotently and conflicts on a different amount', async () => {
+    account('http-fee-half-idem', 10)
+    await charge('http-half-idem', 'http-fee-half-idem', 3)
+    const path = `${chargePath}/http-half-idem/refunds`
+    const first = await call(path, { operationId: 'http-half-idem-r', amount: 1.5 })
+    expect(first.body).toMatchObject({ applied: true, amount: 1.5 })
+    const replay = await call(path, { operationId: 'http-half-idem-r', amount: 1.5 })
+    expect(replay.body).toMatchObject({ applied: false, amount: 1.5 })
+    const conflict = await call(path, { operationId: 'http-half-idem-r', amount: 1 })
+    expect(conflict.status).toBe(409)
+    expect(store().accounts.get('http-fee-half-idem')).toMatchObject({ balance: 8.5 })
+  })
 })

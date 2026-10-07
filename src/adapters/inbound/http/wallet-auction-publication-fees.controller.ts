@@ -32,7 +32,11 @@ export class WalletAuctionPublicationFeesController {
     @Body() body: RefundAuctionPublicationFeeDto,
   ): Promise<AuctionPublicationFeeResponseDto> {
     try {
-      return await this.fees.refund({ operationId: body.operationId, chargeId })
+      return await this.fees.refund({
+        operationId: body.operationId,
+        chargeId,
+        amount: body.amount,
+      })
     } catch (error: unknown) {
       throw toWalletHttpException(error)
     }

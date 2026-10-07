@@ -1,4 +1,4 @@
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql'
+import { startTestPostgres } from '../support/postgres'
 import { sql, type Kysely } from 'kysely'
 
 import { PostgresMissionRewardRepository } from '../../src/adapters/outbound/persistence/PostgresMissionRewardRepository'
@@ -21,15 +21,15 @@ import { createDatabase, migrateToLatest } from '../../src/infrastructure/persis
  *     se toque.
  */
 describe('PostgresMissionRewardRepository', () => {
-  let container: StartedPostgreSqlContainer
+  let container: Awaited<ReturnType<typeof startTestPostgres>>
   let db: Kysely<Database>
   let rewards: PostgresMissionRewardRepository
 
   const SETTLED_AT = new Date('2026-10-02T03:00:05.000Z')
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer('postgres:17-alpine').start()
-    db = createDatabase({ connectionString: container.getConnectionUri() })
+    container = await startTestPostgres()
+    db = createDatabase({ connectionString: container.connectionString })
     const outcome = await migrateToLatest(db)
     if (outcome.error instanceof Error) throw outcome.error
     if (outcome.error) throw new Error('La migracion fallo.')
@@ -245,7 +245,7 @@ describe('PostgresMissionRewardRepository', () => {
       const player = nextPlayer()
       const first = await rewards.creditMissionReward(commandOf(player))
 
-      const otherDb = createDatabase({ connectionString: container.getConnectionUri() })
+      const otherDb = createDatabase({ connectionString: container.connectionString })
 
       try {
         const restarted = new PostgresMissionRewardRepository(otherDb)

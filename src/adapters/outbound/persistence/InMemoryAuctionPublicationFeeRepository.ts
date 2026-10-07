@@ -1,6 +1,7 @@
 import {
   AuctionPublicationFeeInsufficientBalanceError,
   AuctionPublicationFeeNotFoundError,
+  AuctionPublicationFeeRefundExceedsChargeError,
 } from '../../../application/errors/AuctionPublicationFeeError'
 import { OperationConflictError } from '../../../application/errors/WalletPersistenceError'
 import type {
@@ -40,37 +41,47 @@ export class InMemoryAuctionPublicationFeeRepository implements AuctionPublicati
   }
   // eslint-disable-next-line @typescript-eslint/require-await
   async refund(command: RefundAuctionPublicationFee): Promise<AuctionPublicationFeeResult> {
-    const previousChargeId = this.store.publicationFeeRefunds.get(command.operationId)
-    if (previousChargeId !== undefined) {
-      if (previousChargeId !== command.chargeId)
-        throw new OperationConflictError(command.operationId)
-      const replay = this.store.publicationFees.get(command.chargeId)
-      if (!replay) throw new AuctionPublicationFeeNotFoundError(command.chargeId)
-      return { operationId: command.operationId, ...replay, applied: false }
-    }
     const fee = this.store.publicationFees.get(command.chargeId)
     if (!fee) throw new AuctionPublicationFeeNotFoundError(command.chargeId)
-    this.store.publicationFeeRefunds.set(command.operationId, command.chargeId)
+    // Sin `amount`: refund total, igual que antes de HU-90.
+    const requestedAmount = command.amount ?? fee.amount
+    if (requestedAmount <= 0 || requestedAmount > fee.amount)
+      throw new AuctionPublicationFeeRefundExceedsChargeError(command.chargeId)
+    const reused = this.store.publicationFeeRefunds.get(command.operationId)
+    if (reused && (reused.chargeId !== command.chargeId || reused.amount !== requestedAmount))
+      throw new OperationConflictError(command.operationId)
+    if (reused)
+      return {
+        operationId: command.operationId,
+        chargeId: fee.chargeId,
+        sellerId: fee.sellerId,
+        amount: requestedAmount,
+        status: fee.status,
+        applied: false,
+      }
+    this.store.publicationFeeRefunds.set(command.operationId, {
+      chargeId: command.chargeId,
+      amount: requestedAmount,
+    })
     if (fee.status === 'REFUNDED')
       return {
         operationId: command.operationId,
         chargeId: fee.chargeId,
         sellerId: fee.sellerId,
-        amount: fee.amount,
+        amount: requestedAmount,
         status: 'REFUNDED',
         applied: false,
       }
-    this.account(fee.sellerId, command.now).balance += fee.amount
+    this.account(fee.sellerId, command.now).balance += requestedAmount
     fee.status = 'REFUNDED'
-    const result: AuctionPublicationFeeResult = {
+    return {
       operationId: command.operationId,
       chargeId: fee.chargeId,
       sellerId: fee.sellerId,
-      amount: fee.amount,
+      amount: requestedAmount,
       status: 'REFUNDED',
       applied: true,
     }
-    return result
   }
   private account(playerId: string, now: Date): InMemoryAccountState {
     const found = this.store.accounts.get(playerId)

@@ -2,7 +2,10 @@ import {
   assertValidStakeAmount,
   assertValidStakeCreditAmount,
 } from '../../domain/value-objects/stake-amount'
-import { SettlementNotZeroSumError } from '../errors/StakePersistenceError'
+import {
+  CapturedWithoutHoldError,
+  SettlementNotZeroSumError,
+} from '../errors/StakePersistenceError'
 import type {
   SettleStakesCommand,
   SettleStakesResult,
@@ -22,6 +25,11 @@ export type SettleStakesInput = SettleStakesCommand
  *
  * Un `CREDITED` con `amount: 0` SI es valido: es el ganador que aposto en una
  * batalla donde ningun perdedor aposto (el pozo es 0 y solo recupera su hold).
+ *
+ * Un `CREDITED` con `holdId: null` TAMBIEN es valido (pasada de
+ * estabilizacion economica): un ganador SIN apuesta propia que de todos
+ * modos cobra parte del pozo que el rival perdedor SI aposto. `CAPTURED`
+ * SIEMPRE necesita un `holdId` real -- no existe un hold que no exista.
  */
 export const assertValidSettlements = (settlements: readonly StakeSettlementEntry[]): void => {
   if (settlements.length === 0) {
@@ -33,6 +41,10 @@ export const assertValidSettlements = (settlements: readonly StakeSettlementEntr
 
   for (const settlement of settlements) {
     if (settlement.outcome === 'CAPTURED') {
+      if (settlement.holdId === null) {
+        throw new CapturedWithoutHoldError(settlement.playerId)
+      }
+
       assertValidStakeAmount(settlement.amount)
       capturedTotal += settlement.amount
     } else {

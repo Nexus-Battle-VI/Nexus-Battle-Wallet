@@ -1,6 +1,7 @@
 import type { Kysely, Selectable, Transaction } from 'kysely'
 
 import {
+  CapturedWithoutHoldError,
   HoldAmountMismatchError,
   HoldNotFoundError,
   InsufficientAvailableBalanceError,
@@ -250,6 +251,28 @@ export class PostgresStakeRepository implements StakeRepositoryPort {
 
   settle(command: SettleStakesCommand): Promise<SettleStakesResult> {
     return this.db.transaction().execute(async (transaction) => {
+      // Invariante del adaptador (independiente de `SettleStakes`/
+      // `assertValidSettlements`, que este repositorio puede recibir
+      // llamadas SIN pasar por ese caso de uso -- el test de integracion
+      // contra PostgreSQL real lo hace a proposito, para probar la defensa
+      // del propio adaptador). `CAPTURED` SIEMPRE necesita un hold real que
+      // capturar -- `holdId: null` SOLO es valido con `CREDITED` (un
+      // ganador sin apuesta propia, acreditado directo, sin ningun hold que
+      // referenciar). PRIMERA linea de la transaccion, antes de bloquear o
+      // leer nada: ni `wallet_accounts`, ni `wallet_stake_holds` ni
+      // `wallet_stake_ledger` llegan a tocarse -- la transaccion hace
+      // rollback de inmediato (fail-fast real). Tambien antes de la
+      // deteccion de replay: una forma invalida lo es sin importar si el
+      // `operationId` ya se uso antes o no.
+      //
+      // IMPORTANTE: este `throw` debe vivir DENTRO de este callback async
+      // (nunca antes del `return this.db.transaction()...` de arriba, a
+      // nivel del metodo `settle`) -- de lo contrario escapa como una
+      // excepcion SINCRONA en vez de un rechazo de la Promise que `settle`
+      // declara devolver, rompiendo `.rejects.toThrow(...)` en quien lo
+      // invoca.
+      assertNoCapturedWithoutHold(command.settlements)
+
       await lockByText(transaction, command.operationId)
 
       const existingEntries = await transaction
@@ -260,7 +283,7 @@ export class PostgresStakeRepository implements StakeRepositoryPort {
         .execute()
 
       if (existingEntries.length > 0) {
-        if (!sameSettlementIntent(existingEntries, command.settlements)) {
+        if (!sameSettlementIntent(existingEntries, command.settlements, command.operationId)) {
           throw new OperationConflictError(command.operationId)
         }
 
@@ -290,6 +313,53 @@ export class PostgresStakeRepository implements StakeRepositoryPort {
       let creditedTotal = 0
 
       for (const entry of command.settlements) {
+        // Pasada de estabilizacion economica: un `CREDITED` con `holdId:
+        // null` es un ganador SIN apuesta propia que de todos modos cobra
+        // parte del pozo que el rival perdedor SI aposto. No hay ningun
+        // hold suyo que validar ni liberar -- se acredita directo a su
+        // cuenta. `assertNoCapturedWithoutHold` (arriba, antes de la
+        // transaccion) ya garantizo que SOLO `CREDITED` llega aqui con
+        // `holdId: null` -- un `CAPTURED` sin hold nunca llega a este punto.
+        if (entry.holdId === null) {
+          creditedTotal += entry.amount
+
+          const account = await this.ensureAccount(transaction, entry.playerId, now)
+          const nextBalance = account.balance + entry.amount
+
+          await transaction
+            .updateTable('wallet_accounts')
+            .set({ balance: nextBalance, updated_at: now })
+            .where('player_id', '=', entry.playerId)
+            .execute()
+
+          await transaction
+            .insertInto('wallet_stake_ledger')
+            .values({
+              operation_id: command.operationId,
+              kind: 'SETTLE_CREDIT',
+              // Sin hold propio que referenciar: se usa el operationId de
+              // ESTA liquidacion (`wallet_stake_ledger.hold_operation_id`
+              // no tiene FK hacia `wallet_stake_holds`, es solo trazabilidad).
+              hold_operation_id: command.operationId,
+              player_id: entry.playerId,
+              battle_id: command.battleId,
+              amount: entry.amount,
+              resulting_balance: nextBalance,
+              resulting_reserved: account.reserved,
+              created_at: now,
+            })
+            .execute()
+
+          results.push({
+            playerId: entry.playerId,
+            holdId: command.operationId,
+            balance: nextBalance,
+            reserved: account.reserved,
+            available: nextBalance - account.reserved,
+          })
+          continue
+        }
+
         const hold = await transaction
           .selectFrom('wallet_stake_holds')
           .selectAll()
@@ -497,6 +567,24 @@ export class PostgresStakeRepository implements StakeRepositoryPort {
 }
 
 /**
+ * Invariante de FORMA de una liquidacion, independiente de
+ * `SettleStakes.assertValidSettlements` (este repositorio puede invocarse
+ * directamente, sin pasar por ese caso de uso -- el test de integracion
+ * contra PostgreSQL real lo hace a proposito, para probar la defensa del
+ * propio adaptador). `CAPTURED` SIEMPRE necesita un hold real: no existe un
+ * hold que no existe. Solo `CREDITED` puede omitirlo (ganador sin apuesta
+ * propia). NUNCA al reves: `holdId: null` no "significa" `CREDITED` por si
+ * solo, lo exige la combinacion con `outcome`.
+ */
+const assertNoCapturedWithoutHold = (settlements: readonly StakeSettlementEntry[]): void => {
+  for (const entry of settlements) {
+    if (entry.outcome === 'CAPTURED' && entry.holdId === null) {
+      throw new CapturedWithoutHoldError(entry.playerId)
+    }
+  }
+}
+
+/**
  * Compara la intencion completa de una liquidacion contra lo que quedo en el
  * ledger, por CONJUNTO (el orden no importa) y no por posicion. El `kind`
  * distingue un `CAPTURED` de un `CREDITED`.
@@ -504,6 +592,8 @@ export class PostgresStakeRepository implements StakeRepositoryPort {
 const sameSettlementIntent = (
   stored: readonly Selectable<WalletStakeLedgerTable>[],
   settlements: readonly StakeSettlementEntry[],
+  /** Un `CREDITED` con `holdId: null` se guardo con este id como placeholder (ver `settle()`). */
+  settleOperationId: string,
 ): boolean => {
   if (stored.length !== settlements.length) {
     return false
@@ -521,7 +611,7 @@ const sameSettlementIntent = (
     settlements.map((entry) =>
       keyOf(
         entry.playerId,
-        entry.holdId,
+        entry.holdId ?? settleOperationId,
         entry.outcome === 'CAPTURED' ? 'SETTLE_CAPTURE' : 'SETTLE_CREDIT',
         entry.amount,
       ),

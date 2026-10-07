@@ -8,12 +8,14 @@ import {
 } from '@nestjs/common'
 
 import {
+  CapturedWithoutHoldError,
   HoldAmountMismatchError,
   HoldNotFoundError,
   InsufficientAvailableBalanceError,
   SettlementNotZeroSumError,
 } from '../../../application/errors/StakePersistenceError'
 import {
+  AuctionHoldAlreadyCapturedError,
   AuctionHoldDateTooFarError,
   AuctionHoldInsufficientBalanceError,
   AuctionHoldNotFoundError,
@@ -33,12 +35,19 @@ import {
   MissionRewardSchemaError,
 } from '../../../application/errors/MissionRewardError'
 import { OperationConflictError } from '../../../application/errors/WalletPersistenceError'
+import {
+  InvalidTournamentEntryFeeAmountError,
+  TournamentEntryFeeInsufficientBalanceError,
+  TournamentEntryFeeNotFoundError,
+} from '../../../application/errors/TournamentEntryFeeError'
 import { DomainError } from '../../../domain/errors/DomainError'
 import { InvalidStakeAmountError } from '../../../domain/value-objects/stake-amount'
 import {
   AuctionPublicationFeeInsufficientBalanceError,
   AuctionPublicationFeeNotFoundError,
+  AuctionPublicationFeeRefundExceedsChargeError,
   InvalidAuctionPublicationFeeAmountError,
+  InvalidAuctionPublicationFeeRefundAmountError,
 } from '../../../application/errors/AuctionPublicationFeeError'
 
 const body = (statusCode: number, code: string, message: string): Record<string, unknown> => ({
@@ -49,6 +58,15 @@ const body = (statusCode: number, code: string, message: string): Record<string,
 
 /** Semantica de codigos de HU-59/ADR-019, S3 de HU-22 y §11 de HU-23. */
 export const toWalletHttpException = (error: unknown): HttpException => {
+  if (error instanceof TournamentEntryFeeInsufficientBalanceError) {
+    return new UnprocessableEntityException(body(422, 'INSUFFICIENT_BALANCE', error.message))
+  }
+  if (error instanceof InvalidTournamentEntryFeeAmountError) {
+    return new BadRequestException(body(400, 'SCHEMA_INVALID', error.message))
+  }
+  if (error instanceof TournamentEntryFeeNotFoundError) {
+    return new NotFoundException(body(404, 'CHARGE_NOT_FOUND', error.message))
+  }
   // Credito de mision (HU-10.3): cuerpo fuera del contrato -> 400; importe que
   // incumple una regla -> 422. Cada uno con su `code` del contrato.
   if (error instanceof MissionRewardSchemaError) {
@@ -64,11 +82,20 @@ export const toWalletHttpException = (error: unknown): HttpException => {
     return new NotFoundException(body(404, 'PUBLICATION_FEE_NOT_FOUND', error.message))
   if (
     error instanceof AuctionPublicationFeeInsufficientBalanceError ||
-    error instanceof InvalidAuctionPublicationFeeAmountError
+    error instanceof InvalidAuctionPublicationFeeAmountError ||
+    error instanceof InvalidAuctionPublicationFeeRefundAmountError ||
+    error instanceof AuctionPublicationFeeRefundExceedsChargeError
   )
     return new UnprocessableEntityException(body(422, 'PUBLICATION_FEE_INVALID', error.message))
   if (error instanceof AuctionHoldNotFoundError)
     return new NotFoundException(body(404, 'HOLD_NOT_FOUND', error.message))
+  // Codigo propio, no AUCTION_HOLD_INVALID: el consumidor debe poder
+  // distinguir "ya capturado" (los creditos no volvieron) de cualquier otro
+  // rechazo, sin interpretar el mensaje.
+  if (error instanceof AuctionHoldAlreadyCapturedError)
+    return new UnprocessableEntityException(
+      body(422, 'AUCTION_HOLD_ALREADY_CAPTURED', error.message),
+    )
   if (
     error instanceof AuctionHoldInsufficientBalanceError ||
     error instanceof AuctionHoldStateError ||
@@ -108,6 +135,10 @@ export const toWalletHttpException = (error: unknown): HttpException => {
 
   if (error instanceof HoldAmountMismatchError) {
     return new UnprocessableEntityException(body(422, 'HOLD_AMOUNT_MISMATCH', error.message))
+  }
+
+  if (error instanceof CapturedWithoutHoldError) {
+    return new UnprocessableEntityException(body(422, 'CAPTURED_WITHOUT_HOLD', error.message))
   }
 
   if (error instanceof InvalidStakeAmountError) {

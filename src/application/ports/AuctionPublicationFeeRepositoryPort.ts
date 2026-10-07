@@ -19,6 +19,13 @@ export interface ChargeAuctionPublicationFee {
 export interface RefundAuctionPublicationFee {
   readonly operationId: string
   readonly chargeId: string
+  /**
+   * Monto a reembolsar. Si se omite, se reembolsa el monto completo cobrado
+   * (comportamiento previo a HU-90, preservado para no romper al llamador
+   * actual, que nunca lo envia). Si se informa, debe ser positivo, multiplo
+   * de 0.5 y no superar lo cobrado originalmente.
+   */
+  readonly amount?: number
   readonly now: Date
 }
 

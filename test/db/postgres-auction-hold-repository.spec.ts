@@ -1,7 +1,8 @@
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql'
+import { startTestPostgres } from '../support/postgres'
 import { sql, type Kysely } from 'kysely'
 
 import {
+  AuctionHoldAlreadyCapturedError,
   AuctionHoldNotFoundError,
   AuctionHoldReferenceError,
   AuctionHoldStateError,
@@ -12,15 +13,15 @@ import type { Database } from '../../src/adapters/outbound/persistence/schema'
 import { createDatabase, migrateToLatest } from '../../src/infrastructure/persistence/database'
 
 describe('PostgresAuctionHoldRepository', () => {
-  let container: StartedPostgreSqlContainer
+  let container: Awaited<ReturnType<typeof startTestPostgres>>
   let db: Kysely<Database>
   let holds: PostgresAuctionHoldRepository
   const now = new Date('2026-09-22T15:00:00.000Z')
   const close = new Date('2026-09-22T16:00:00.000Z')
 
   beforeAll(async () => {
-    container = await new PostgreSqlContainer('postgres:17-alpine').start()
-    db = createDatabase({ connectionString: container.getConnectionUri() })
+    container = await startTestPostgres()
+    db = createDatabase({ connectionString: container.connectionString })
     const outcome = await migrateToLatest(db)
     if (outcome.error !== undefined)
       throw outcome.error instanceof Error ? outcome.error : new Error('La migracion fallo.')
@@ -248,5 +249,237 @@ describe('PostgresAuctionHoldRepository', () => {
     expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(2)
     expect(await row('auction-race-winner')).toEqual({ balance: '70', reserved: '0' })
     expect(await row('auction-race-seller')).toEqual({ balance: '50', reserved: '0' })
+  })
+
+  /**
+   * HU-90 (CA-05): release al cancelar una subasta, contra PostgreSQL real.
+   * Lo que solo se puede comprobar aqui es el ledger: un no-op no escribe
+   * ningun movimiento y un replay no duplica el que ya existe.
+   */
+  describe('release por cancelacion de subasta (HU-90, CA-05)', () => {
+    const releaseLedger = async (holdId: string) =>
+      (
+        await sql<{ operation_id: string; kind: string; amount: string }>`
+          select operation_id, kind, amount from wallet_auction_hold_ledger
+          where hold_id = ${holdId} and kind = 'AUCTION_HOLD_RELEASED'
+        `.execute(db)
+      ).rows
+    const holdStatus = async (holdId: string) =>
+      (
+        await sql<{ status: string }>`
+          select status from wallet_auction_holds where id = ${holdId}
+        `.execute(db)
+      ).rows[0]?.status
+    const operations = async (operationId: string) =>
+      (
+        await sql<{ operation_id: string }>`
+          select operation_id from wallet_auction_hold_operations
+          where operation_id = ${operationId}
+        `.execute(db)
+      ).rows
+
+    it('ACTIVE -> RELEASED con AUCTION_CANCELLED: un unico movimiento de ledger y reserved correcto', async () => {
+      await seed('cancel-active', 100)
+      await create('cancel-active-hold', 'cancel-active')
+      // Una segunda reserva del mismo jugador no debe verse afectada.
+      await create('cancel-active-other', 'cancel-active', 20)
+      expect(await row('cancel-active')).toEqual({ balance: '100', reserved: '50' })
+
+      const released = await holds.release({
+        operationId: 'cancel-active-op',
+        holdId: 'cancel-active-hold',
+        reason: 'AUCTION_CANCELLED',
+        now,
+      })
+
+      expect(released).toEqual({
+        operationId: 'cancel-active-op',
+        holdId: 'cancel-active-hold',
+        holdStatus: 'RELEASED',
+        applied: true,
+      })
+      expect(await holdStatus('cancel-active-hold')).toBe('RELEASED')
+      expect(await row('cancel-active')).toEqual({ balance: '100', reserved: '20' })
+      expect(await releaseLedger('cancel-active-hold')).toEqual([
+        { operation_id: 'cancel-active-op', kind: 'AUCTION_HOLD_RELEASED', amount: '30' },
+      ])
+      const intent = await sql<{ intent: unknown }>`
+        select intent from wallet_auction_hold_operations where operation_id = 'cancel-active-op'
+      `.execute(db)
+      expect(intent.rows[0]?.intent).toEqual(['release', 'cancel-active-hold', 'AUCTION_CANCELLED'])
+    })
+
+    it('el replay del mismo operationId no duplica ledger ni liberacion', async () => {
+      await seed('cancel-replay', 100)
+      await create('cancel-replay-hold', 'cancel-replay')
+      const command = {
+        operationId: 'cancel-replay-op',
+        holdId: 'cancel-replay-hold',
+        reason: 'AUCTION_CANCELLED',
+        now,
+      } as const
+      const first = await holds.release(command)
+
+      const replay = await new PostgresAuctionHoldRepository(db).release(command)
+
+      expect(replay).toEqual({ ...first, applied: false })
+      expect(await row('cancel-replay')).toEqual({ balance: '100', reserved: '0' })
+      expect(await releaseLedger('cancel-replay-hold')).toHaveLength(1)
+      expect(await operations('cancel-replay-op')).toHaveLength(1)
+    })
+
+    it('dos releases concurrentes del mismo hold con operationId distintos liberan una sola vez', async () => {
+      await seed('cancel-race', 100)
+      await create('cancel-race-hold', 'cancel-race')
+
+      const results = await Promise.all([
+        holds.release({
+          operationId: 'cancel-race-op-a',
+          holdId: 'cancel-race-hold',
+          reason: 'AUCTION_CANCELLED',
+          now,
+        }),
+        new PostgresAuctionHoldRepository(db).release({
+          operationId: 'cancel-race-op-b',
+          holdId: 'cancel-race-hold',
+          reason: 'AUCTION_OUTBID',
+          now,
+        }),
+      ])
+
+      expect(results.map((result) => result.applied).sort()).toEqual([false, true])
+      expect(results.every((result) => result.holdStatus === 'RELEASED')).toBe(true)
+      expect(await row('cancel-race')).toEqual({ balance: '100', reserved: '0' })
+      expect(await releaseLedger('cancel-race-hold')).toHaveLength(1)
+    })
+
+    it('RELEASED por otra operacion: no-op exitoso, sin ledger nuevo y con replay estable', async () => {
+      await seed('cancel-released', 100)
+      await create('cancel-released-hold', 'cancel-released')
+      await holds.release({
+        operationId: 'cancel-released-outbid',
+        holdId: 'cancel-released-hold',
+        reason: 'AUCTION_OUTBID',
+        now,
+      })
+      const command = {
+        operationId: 'cancel-released-op',
+        holdId: 'cancel-released-hold',
+        reason: 'AUCTION_CANCELLED',
+        now,
+      } as const
+
+      const noop = await holds.release(command)
+
+      expect(noop).toEqual({
+        operationId: 'cancel-released-op',
+        holdId: 'cancel-released-hold',
+        holdStatus: 'RELEASED',
+        applied: false,
+      })
+      expect(await holds.release(command)).toEqual(noop)
+      expect(await row('cancel-released')).toEqual({ balance: '100', reserved: '0' })
+      expect(await releaseLedger('cancel-released-hold')).toEqual([
+        { operation_id: 'cancel-released-outbid', kind: 'AUCTION_HOLD_RELEASED', amount: '30' },
+      ])
+      expect(await operations('cancel-released-op')).toHaveLength(1)
+    })
+
+    it('EXPIRED: no-op exitoso con el estado real, sin ledger de release', async () => {
+      await seed('cancel-expired', 100)
+      await holds.create({
+        operationId: 'cancel-expired-hold',
+        playerId: 'cancel-expired',
+        amount: 30,
+        auctionId: 'auction-cancel-expired',
+        bidId: 'bid-cancel-expired',
+        closesAt: new Date(now.getTime() - 600_000),
+        now: new Date(now.getTime() - 900_000),
+        graceMs: 1,
+      })
+      expect(await holds.expire(now)).toBeGreaterThanOrEqual(1)
+      expect(await holdStatus('cancel-expired-hold')).toBe('EXPIRED')
+
+      const noop = await holds.release({
+        operationId: 'cancel-expired-op',
+        holdId: 'cancel-expired-hold',
+        reason: 'AUCTION_CANCELLED',
+        now,
+      })
+
+      expect(noop).toEqual({
+        operationId: 'cancel-expired-op',
+        holdId: 'cancel-expired-hold',
+        holdStatus: 'EXPIRED',
+        applied: false,
+      })
+      expect(await holdStatus('cancel-expired-hold')).toBe('EXPIRED')
+      expect(await row('cancel-expired')).toEqual({ balance: '100', reserved: '0' })
+      expect(await releaseLedger('cancel-expired-hold')).toEqual([])
+    })
+
+    it('CAPTURED: error distinguible, sin saldo, ledger ni operacion registrados', async () => {
+      await seed('cancel-captured', 100)
+      await seed('cancel-captured-seller', 0)
+      await create('cancel-captured-hold', 'cancel-captured')
+      await holds.capture({
+        operationId: 'cancel-captured-capture',
+        holdId: 'cancel-captured-hold',
+        beneficiaryPlayerId: 'cancel-captured-seller',
+        auctionId: 'auction-cancel-captured-hold',
+        winningBidId: 'bid-cancel-captured-hold',
+        now,
+      })
+      const command = {
+        operationId: 'cancel-captured-op',
+        holdId: 'cancel-captured-hold',
+        reason: 'AUCTION_CANCELLED',
+        now,
+      } as const
+
+      await expect(holds.release(command)).rejects.toThrow(AuctionHoldAlreadyCapturedError)
+      // Reintentarlo no lo convierte en exito: no quedo ningun replay guardado.
+      await expect(holds.release(command)).rejects.toThrow(AuctionHoldAlreadyCapturedError)
+
+      expect(await holdStatus('cancel-captured-hold')).toBe('CAPTURED')
+      expect(await row('cancel-captured')).toEqual({ balance: '70', reserved: '0' })
+      expect(await row('cancel-captured-seller')).toEqual({ balance: '30', reserved: '0' })
+      expect(await releaseLedger('cancel-captured-hold')).toEqual([])
+      expect(await operations('cancel-captured-op')).toEqual([])
+    })
+
+    it('hold inexistente: AuctionHoldNotFoundError sin registrar la operacion', async () => {
+      await expect(
+        holds.release({
+          operationId: 'cancel-missing-op',
+          holdId: 'cancel-missing-hold',
+          reason: 'AUCTION_CANCELLED',
+          now,
+        }),
+      ).rejects.toThrow(AuctionHoldNotFoundError)
+      expect(await operations('cancel-missing-op')).toEqual([])
+    })
+
+    it('mismo operationId con otro reason: conflicto de idempotencia, sin tocar el hold', async () => {
+      await seed('cancel-conflict', 100)
+      await create('cancel-conflict-hold', 'cancel-conflict')
+      await holds.release({
+        operationId: 'cancel-conflict-op',
+        holdId: 'cancel-conflict-hold',
+        reason: 'AUCTION_SETTLEMENT_LOST',
+        now,
+      })
+
+      await expect(
+        holds.release({
+          operationId: 'cancel-conflict-op',
+          holdId: 'cancel-conflict-hold',
+          reason: 'AUCTION_CANCELLED',
+          now,
+        }),
+      ).rejects.toThrow(OperationConflictError)
+      expect(await releaseLedger('cancel-conflict-hold')).toHaveLength(1)
+      expect(await row('cancel-conflict')).toEqual({ balance: '100', reserved: '0' })
+    })
   })
 })
