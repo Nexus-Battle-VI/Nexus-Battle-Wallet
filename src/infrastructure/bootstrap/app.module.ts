@@ -15,6 +15,17 @@ import { WalletAuctionHoldsController } from '../../adapters/inbound/http/wallet
 import { WalletBuyNowTransfersController } from '../../adapters/inbound/http/wallet-buy-now-transfers.controller'
 import { WalletAuctionPublicationFeesController } from '../../adapters/inbound/http/wallet-auction-publication-fees.controller'
 import { WalletTournamentEntryFeesController } from '../../adapters/inbound/http/wallet-tournament-entry-fees.controller'
+import { WalletTournamentPrizeController } from '../../adapters/inbound/http/wallet-tournament-prize.controller'
+import { PostgresTournamentPrizeRepository } from '../../adapters/outbound/persistence/PostgresTournamentPrizeRepository'
+import { TournamentPrizeUnavailableError } from '../../application/errors/TournamentPrizeError'
+import {
+  TOURNAMENT_PRIZE_REPOSITORY,
+  type TournamentPrizeRepositoryPort,
+} from '../../application/ports/TournamentPrizeRepositoryPort'
+import {
+  CREDIT_TOURNAMENT_PRIZE,
+  CreditTournamentPrize,
+} from '../../application/use-cases/CreditTournamentPrize'
 import { InMemoryTournamentEntryFeeRepository } from '../../adapters/outbound/persistence/InMemoryTournamentEntryFeeRepository'
 import { PostgresTournamentEntryFeeRepository } from '../../adapters/outbound/persistence/PostgresTournamentEntryFeeRepository'
 import {
@@ -132,6 +143,7 @@ export const INTERNAL_CALLERS: readonly string[] = ['auction', 'combat', 'missio
     WalletBuyNowTransfersController,
     WalletAuctionPublicationFeesController,
     WalletTournamentEntryFeesController,
+    WalletTournamentPrizeController,
   ],
   providers: [
     {
@@ -403,6 +415,29 @@ export const INTERNAL_CALLERS: readonly string[] = ['auction', 'combat', 'missio
       useFactory: (wallet: WalletRepositoryPort, clock: ClockPort): CreditBattleReward =>
         new CreditBattleReward(wallet, clock),
       inject: [WALLET_REPOSITORY, CLOCK],
+    },
+    {
+      provide: TOURNAMENT_PRIZE_REPOSITORY,
+      useFactory: (db: Kysely<Database> | null): TournamentPrizeRepositoryPort =>
+        db !== null
+          ? new PostgresTournamentPrizeRepository(db)
+          : {
+              credit: () =>
+                Promise.reject(
+                  new TournamentPrizeUnavailableError(
+                    'El premio requiere persistencia PostgreSQL durable.',
+                  ),
+                ),
+            },
+      inject: [DATABASE],
+    },
+    {
+      provide: CREDIT_TOURNAMENT_PRIZE,
+      useFactory: (
+        repository: TournamentPrizeRepositoryPort,
+        clock: ClockPort,
+      ): CreditTournamentPrize => new CreditTournamentPrize(repository, clock),
+      inject: [TOURNAMENT_PRIZE_REPOSITORY, CLOCK],
     },
     {
       provide: GET_WALLET_SNAPSHOT,

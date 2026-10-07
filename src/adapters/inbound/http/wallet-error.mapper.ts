@@ -8,6 +8,11 @@ import {
 } from '@nestjs/common'
 
 import {
+  InvalidTournamentPrizeError,
+  TournamentPrizeSchemaError,
+} from '../../../application/errors/TournamentPrizeError'
+
+import {
   CapturedWithoutHoldError,
   HoldAmountMismatchError,
   HoldNotFoundError,
@@ -55,6 +60,23 @@ const body = (statusCode: number, code: string, message: string): Record<string,
   code,
   message,
 })
+
+/** Códigos aditivos del premio. Conserva intactos los contratos HU-22/HU-84. */
+export const toTournamentPrizeHttpException = (error: unknown): HttpException => {
+  if (error instanceof TournamentPrizeSchemaError)
+    return new BadRequestException(body(400, 'SCHEMA_INVALID', error.message))
+  if (error instanceof InvalidTournamentPrizeError)
+    return new UnprocessableEntityException(body(422, 'PRIZE_INVALID', error.message))
+  if (error instanceof OperationConflictError)
+    return new ConflictException(body(409, 'OPERATION_ID_REUSED', error.message))
+  return new ServiceUnavailableException(
+    body(
+      503,
+      'PRIZE_DEPENDENCY_UNAVAILABLE',
+      'No se pudo confirmar el premio. Reintente el mismo derecho y operationId.',
+    ),
+  )
+}
 
 /** Semantica de codigos de HU-59/ADR-019, S3 de HU-22 y §11 de HU-23. */
 export const toWalletHttpException = (error: unknown): HttpException => {

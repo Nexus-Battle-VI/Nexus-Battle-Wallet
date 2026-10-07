@@ -9,12 +9,14 @@ import type {
 } from '../../../application/ports/TournamentEntryFeeRepositoryPort'
 import { weekIdentityOf } from '../../../domain/value-objects/week-identity'
 import { lockByText } from './advisory-lock'
+import { claimTournamentOperation } from './PostgresTournamentOperationRegistry'
 import type { Database } from './schema'
 type Tx = Transaction<Database>
 export class PostgresTournamentEntryFeeRepository implements TournamentEntryFeeRepositoryPort {
   constructor(private readonly db: Kysely<Database>) {}
   charge(c: ChargeTournamentEntryFee): Promise<TournamentEntryFeeResult> {
     return this.db.transaction().execute(async (tx) => {
+      await claimTournamentOperation(tx, c.operationId, 'ENTRY_CHARGE', c.now)
       await lockByText(tx, `tournament-entry:${c.operationId}`)
       const refundOperation = await tx
         .selectFrom('wallet_tournament_entry_fee_refunds')
@@ -114,6 +116,7 @@ export class PostgresTournamentEntryFeeRepository implements TournamentEntryFeeR
   }
   refund(c: RefundTournamentEntryFee): Promise<TournamentEntryFeeResult> {
     return this.db.transaction().execute(async (tx) => {
+      await claimTournamentOperation(tx, c.operationId, 'ENTRY_REFUND', c.now)
       await lockByText(tx, `tournament-entry:${c.operationId}`)
       const chargeOperation = await tx
         .selectFrom('wallet_tournament_entry_fees')
