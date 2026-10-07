@@ -103,7 +103,10 @@ describe('Migración 008 sobre Wallet develop publicado', () => {
     expect(await migrateToLatest(db, through008)).toEqual({ applied: [], error: undefined })
     expect(await snapshotPublishedTables()).toEqual(saved)
     // La implementación actual comparte scope Tournament desde 009.
-    expect((await migrateToLatest(db)).applied).toEqual(['009-wallet-tournament-prizes'])
+    expect((await migrateToLatest(db)).applied).toEqual([
+      '009-wallet-tournament-prizes',
+      '010-wallet-tournament-prize-absence',
+    ])
     const fees = new PostgresTournamentEntryFeeRepository(db)
     await fees.charge({
       operationId: 'upgrade-entry',

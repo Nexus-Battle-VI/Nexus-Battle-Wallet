@@ -91,7 +91,7 @@ export interface WalletTournamentPrizeLedgerTable {
   readonly tournament_id: string
   readonly champion_team_id: string
   readonly final_encounter_id: string
-  readonly final_room_id: string
+  readonly final_room_id: string | null
   readonly player_id: string
   readonly hero_id: string
   readonly amount: ColumnType<string, string, never>

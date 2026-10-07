@@ -2,10 +2,7 @@
 
 Implementación aditiva, con padre Wallet PR #29 (`90faf19bc28c0a9f929d7c77aae192c1b3a99642`).
 Refs Nexus-Battle-VI/Nexus-Battle-Management#472, #493, #494, #496.
-Contrato consumido: `torneos-cierre-v0.1.0-propuesta`, Infrastructure
-`a5cdcc5c9f610d0ee7eaa4ab57b224ea34a4966b`, `torneos-cierre-premios-v0.1.0.md`
-SHA-256 `cbc0c4f5094dc443132fe7ea546d55cee0343191bcf1ef7cb85b61bdcf09677e`.
-Acuse propio en `estado/chat-03.json`; no congela el acuerdo ni acredita aceptación funcional.
+Contrato actualizado: [torneos-v3.0.0 revisión 5](https://github.com/Nexus-Battle-VI/Nexus-Battle-Infrastructure/blob/docs/torneos-v3-hu85-20261007/docs/contracts/torneos-v3.0.0.md). Conserva el wire de diez claves, con finalRoomId nullable para finales por ausencia. La publicación del PR no acredita aceptación funcional.
 Registro/fees mantienen `torneos-hu77-84-78-hu83-v2.0.0`.
 
 ## Autoridad y referencias
@@ -29,7 +26,7 @@ No se implementan HU-85, elección de campeón, reglas de motor ni reparto.
 cabeceras, método, ruta sin query y ventana temporal son los existentes.
 JWT público o HMAC válido de Combat/Missions/Auction no autorizan la ruta.
 
-Los diez campos son obligatorios y se rechazan campos desconocidos:
+Los diez campos son obligatorios y se rechazan campos desconocidos. finalRoomId admite null explícito cuando la final terminó por ausencia; omitirlo o enviarlo vacío falla. Cambiar null por una sala con el mismo operationId produce conflicto:
 
 ```json
 {
@@ -105,6 +102,8 @@ La ruta exige PostgreSQL incluso en desarrollo: `memory` responde 503 para no
 confirmar un premio que desaparecería al reiniciar. No se necesita otra clave de
 entorno: `DATABASE_URL`, `PERSISTENCE_DRIVER` e `INTERNAL_SERVICE_AUTH_SECRET` existentes.
 
+La migración forward `010-wallet-tournament-prize-absence` retira exclusivamente NOT NULL de final_room_id. Preserva checks, recibos y saldos históricos. Revertirla con recibos por ausencia falla sin borrar datos. El registro de operaciones usa ON CONFLICT sin limitarlo a un índice, para deduplicar también carreras sobre el índice único (operation_id,purpose).
+
 ## Verificación y límites
 
 Tests propios bajo `test/{unit,integration,db}`: DTO estricto/HMAC; importes exactos
@@ -133,9 +132,7 @@ sin escribir en ese checkout, para comprobar HTTP/HMAC y validación de recibo s
 un derecho QA. Esta prueba del destino no demuestra un torneo jugado.
 
 Aceptar HU-86 requiere repetir con HU-85/HU-80 reales, campeón confirmado y política
-G2/catálogo aprobados. No hay autorización de publicación remota, merge, despliegue
-ni cierre de HU en este encargo. Tras integrar/squash del padre #29, Coordinación
-debe adaptar solo este incremento a develop y verificar el SHA resultante.
+G2/catálogo aprobados. El usuario autorizó publicar este incremento como PR sobre develop actualizado (47f9799). Merge, despliegue y aceptación del PO siguen pendientes.
 
 ## Bloqueos heredados de precisión verificados
 

@@ -13,7 +13,7 @@ export const claimTournamentOperation = async (
   await tx
     .insertInto('wallet_tournament_operation_ids')
     .values({ operation_id: operationId, purpose, created_at: now })
-    .onConflict((c) => c.column('operation_id').doNothing())
+    .onConflict((c) => c.doNothing())
     .execute()
   const owner = await tx
     .selectFrom('wallet_tournament_operation_ids')

@@ -23,6 +23,17 @@ describe('Crédito HU-86: validación independiente de HTTP', () => {
       '9007199254740991',
     )
   })
+  it('acepta una ausencia explícita pero exige la referencia final y las diez claves', () => {
+    expect(normalizeTournamentPrize({ ...input, finalRoomId: null }).finalRoomId).toBeNull()
+    for (const finalRoomId of [undefined, '', ' '])
+      expect(() => normalizeTournamentPrize({ ...input, finalRoomId })).toThrow(
+        TournamentPrizeSchemaError,
+      )
+    const missing = Object.fromEntries(
+      Object.entries(input).filter(([key]) => key !== 'finalRoomId'),
+    )
+    expect(() => normalizeTournamentPrize(missing)).toThrow(TournamentPrizeSchemaError)
+  })
   it.each([
     '0',
     '-1',

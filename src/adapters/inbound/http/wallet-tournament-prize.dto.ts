@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger'
-import { Equals, IsString, Matches, MaxLength, MinLength } from 'class-validator'
+import { Equals, IsString, Matches, MaxLength, MinLength, ValidateIf } from 'class-validator'
 
 export class CreditTournamentPrizeDto {
   @ApiProperty({ maxLength: 512 })
@@ -26,12 +26,13 @@ export class CreditTournamentPrizeDto {
   @MaxLength(512)
   @Matches(/^\S(?:.*\S)?$/)
   finalEncounterId!: string
-  @ApiProperty({ maxLength: 160 })
+  @ApiProperty({ type: String, nullable: true, maxLength: 160 })
+  @ValidateIf((_object: unknown, value: unknown) => value !== null)
   @IsString()
   @MinLength(1)
   @MaxLength(160)
   @Matches(/^\S(?:.*\S)?$/)
-  finalRoomId!: string
+  finalRoomId!: string | null
   @ApiProperty({ maxLength: 160 })
   @IsString()
   @MinLength(1)

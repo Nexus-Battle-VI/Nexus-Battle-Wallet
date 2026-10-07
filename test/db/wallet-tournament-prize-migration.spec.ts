@@ -65,7 +65,7 @@ describe('Migración 009: actualización desde develop/inscripción', () => {
       values ('qa-legacy-half-refund','qa-legacy-auction',1.5,${now})`.execute(db)
     const before = await snapshot()
     expect(await migrateToLatest(db)).toEqual({
-      applied: ['009-wallet-tournament-prizes'],
+      applied: ['009-wallet-tournament-prizes', '010-wallet-tournament-prize-absence'],
       error: undefined,
     })
     expect(await snapshot()).toEqual(before)

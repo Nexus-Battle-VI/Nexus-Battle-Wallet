@@ -18,6 +18,7 @@ import * as walletMissionRewardCredits from '../../adapters/outbound/persistence
 import * as walletAuctionPublicationFeePartialRefund from '../../adapters/outbound/persistence/migrations/007-wallet-auction-publication-fee-partial-refund'
 import * as walletTournamentEntryFees from '../../adapters/outbound/persistence/migrations/008-wallet-tournament-entry-fees'
 import * as walletTournamentPrizes from '../../adapters/outbound/persistence/migrations/009-wallet-tournament-prizes'
+import * as walletPrizeAbsence from '../../adapters/outbound/persistence/migrations/010-wallet-tournament-prize-absence'
 import type { Database } from '../../adapters/outbound/persistence/schema'
 
 export interface DatabaseOptions {
@@ -89,6 +90,7 @@ export const MIGRATIONS: Readonly<Record<string, Migration>> = {
   '007-wallet-auction-publication-fee-partial-refund': walletAuctionPublicationFeePartialRefund,
   '008-wallet-tournament-entry-fees': walletTournamentEntryFees,
   '009-wallet-tournament-prizes': walletTournamentPrizes,
+  '010-wallet-tournament-prize-absence': walletPrizeAbsence,
 }
 
 export interface MigrationOutcome {

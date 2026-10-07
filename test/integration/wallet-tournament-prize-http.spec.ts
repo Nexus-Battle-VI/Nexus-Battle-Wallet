@@ -69,6 +69,14 @@ describe('HTTP/HMAC HU-86: seguridad, DTO y documentación', () => {
     expect(response.status).toBe(503)
     expect(response.body.code).toBe('PRIZE_DEPENDENCY_UNAVAILABLE')
   })
+  it('valida null explícito por ausencia y rechaza la sala omitida o vacía', async () => {
+    expect((await call({ ...body, finalRoomId: null })).status).toBe(503)
+    expect((await call({ ...body, finalRoomId: '' })).status).toBe(400)
+    const missing = Object.fromEntries(
+      Object.entries(body).filter(([key]) => key !== 'finalRoomId'),
+    )
+    expect((await call(missing)).status).toBe(400)
+  })
   it.each(['combat', 'missions', 'auction', 'unknown'])(
     'rechaza HMAC válido de %s',
     async (caller) => {

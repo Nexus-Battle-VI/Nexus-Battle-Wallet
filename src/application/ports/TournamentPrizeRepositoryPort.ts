@@ -4,7 +4,7 @@ export interface TournamentCreditsPrize {
   readonly tournamentId: string
   readonly championTeamId: string
   readonly finalEncounterId: string
-  readonly finalRoomId: string
+  readonly finalRoomId: string | null
   readonly playerId: string
   readonly heroId: string
   readonly kind: 'CREDITS'

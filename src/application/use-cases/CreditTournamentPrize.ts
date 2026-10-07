@@ -31,6 +31,7 @@ export const normalizeTournamentPrize = (raw: unknown): TournamentCreditsPrize =
     )
   for (const [key, max] of Object.entries(textLimits)) {
     const value = body[key]
+    if (key === 'finalRoomId' && value === null) continue
     if (
       typeof value !== 'string' ||
       value.length > max ||
@@ -55,7 +56,7 @@ export const normalizeTournamentPrize = (raw: unknown): TournamentCreditsPrize =
     tournamentId: body.tournamentId as string,
     championTeamId: body.championTeamId as string,
     finalEncounterId: body.finalEncounterId as string,
-    finalRoomId: body.finalRoomId as string,
+    finalRoomId: body.finalRoomId as string | null,
     playerId: body.playerId as string,
     heroId: body.heroId as string,
     kind: 'CREDITS',

@@ -31,6 +31,20 @@ describe('Premio HU-86 en PostgreSQL real, dos pools', () => {
       .selectAll()
       .where('player_id', '=', player)
       .executeTakeFirstOrThrow()
+  it('una final sin sala acredita una vez y no permite cambiar su fuente con el mismo id', async () => {
+    const c = { ...qaTournamentPrize('absence'), finalRoomId: null }
+    const receipts = await Promise.all([
+      prizes.credit(c, now),
+      new PostgresTournamentPrizeRepository(second).credit(c, now),
+    ])
+    expect(receipts[0]).toEqual({ ...c, status: 'DELIVERED', receiptId: expect.any(String) })
+    expect(receipts[1]).toEqual(receipts[0])
+    expect((await account(c.playerId)).balance).toBe('501')
+    await expect(prizes.credit({ ...c, finalRoomId: 'invented-room' }, now)).rejects.toBeInstanceOf(
+      OperationConflictError,
+    )
+    expect(await prizes.credit(c, now)).toEqual(receipts[0])
+  })
   it('suma el máximo exactamente a un saldo grande con fracción; mantiene reservas, cofres y semana', async () => {
     const c = { ...qaTournamentPrize('exact'), amount: '9007199254740991' }
     await sql`insert into wallet_accounts (player_id,balance,reserved,victory_progress,weekly_chest_count,week_identity)
